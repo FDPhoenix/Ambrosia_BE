@@ -3,7 +3,7 @@ const Dish = require("../models/Dish");
 
 exports.getAllCategories = async (req, res) => {
     try {
-        const categories = await Category.find(); // Get all categories
+        const categories = await Category.find({ isHidden: false });
 
         return res.status(200).json({
             message: "Categories retrieved successfully.",
