@@ -33,8 +33,10 @@ exports.login2 = {
       }
       
 
-      const defaultRoleId = "67ac64bbe072694cafa16e78";
-      await UserRole.create({ userId: user._id, roleId: defaultRoleId });
+      const existingUserRole = await UserRole.findOne({ userId: user._id });
+      if (!existingUserRole) {
+        await UserRole.create({ userId: user._id, roleId: "67ac64bbe072694cafa16e78" });
+      }
 
       const token = jwt.sign(
         {
@@ -42,7 +44,7 @@ exports.login2 = {
           rankId: user.rankId,
           image: user.profileImage,
           fullname: user.fullname,
-          roleId: [defaultRoleId],
+          roleId: ["67ac64bbe072694cafa16e78"],
         },
         process.env.JWT_SECRET,
         { expiresIn: "1d" }
@@ -89,8 +91,11 @@ exports.login2 = {
         await user.save();
       }
 
-      const defaultRoleId = "67ac64bbe072694cafa16e78";
-      await UserRole.create({ userId: user._id, roleId: defaultRoleId });
+
+      const existingUserRole = await UserRole.findOne({ userId: user._id });
+      if (!existingUserRole) {
+        await UserRole.create({ userId: user._id, roleId: "67ac64bbe072694cafa16e78" });
+      }
 
       const token = jwt.sign(
         {
@@ -98,7 +103,7 @@ exports.login2 = {
           rankId: user.rankId,
           image: user.profileImage,
           fullname: user.fullname,
-          roleId: [defaultRoleId],
+          roleId: ["67ac64bbe072694cafa16e78"],
         },
         process.env.JWT_SECRET,
         { expiresIn: "1d" }
@@ -204,7 +209,15 @@ exports.register = async (req, res) => {
     });
 
     const defaultRoleId = "67ac64bbe072694cafa16e78";
-    await UserRole.create({ userId: newUser._id, roleId: defaultRoleId });
+
+    const existingUserRole = await UserRole.findOne({ 
+      userId: newUser._id, 
+      roleId: defaultRoleId 
+    });
+    
+    if (!existingUserRole) {
+      await UserRole.create({ userId: newUser._id, roleId: defaultRoleId });
+    }
 
     sendEmailOtp(fullname, email, otp);
 

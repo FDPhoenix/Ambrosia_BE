@@ -16,7 +16,7 @@ exports.getLineChartData = async (req, res) => {
         {
           $match: {
             createdAt: {
-              $gte: new Date(`${year}-01-01T00:00:00Z`),  // Đảm bảo thời gian chuẩn
+              $gte: new Date(`${year}-01-01T00:00:00Z`),  
               $lte: new Date(`${year}-12-31T23:59:59Z`)
             },
             isActive: true
@@ -104,29 +104,56 @@ const ROLE_IDS = {
   exports.getUserCounts = async (req, res) => {
     try {
       const activeUserIds = await User.find({ isActive: true }).distinct("_id");
-  
-      const totalUsers = activeUserIds.length;
 
-      const adminCount = await UserRole.countDocuments({
-        userId: { $in: activeUserIds },
-        roleId: ROLE_IDS.admin
+
+      const roleCounts = await UserRole.aggregate([
+        {
+          $match: {
+            userId: { $in: activeUserIds }
+          }
+        },
+        {
+          $group: {
+            _id: '$roleId',
+            uniqueUserCount: { $addToSet: '$userId' }
+          }
+        },
+        {
+          $project: {
+            roleId: '$_id',
+            userCount: { $size: '$uniqueUserCount' }
+          }
+        }
+      ]);
+
+
+      let adminCount = 0;
+      let customerCount = 0;
+      let staffCount = 0;
+      let chefCount = 0;
+
+
+      roleCounts.forEach(role => {
+        const roleIdStr = role.roleId.toString();
+        switch (roleIdStr) {
+          case ROLE_IDS.admin:
+            adminCount = role.userCount;
+            break;
+          case ROLE_IDS.customer:
+            customerCount = role.userCount;
+            break;
+          case ROLE_IDS.staff:
+            staffCount = role.userCount;
+            break;
+          case ROLE_IDS.chef:
+            chefCount = role.userCount;
+            break;
+        }
       });
-  
-      const customerCount = await UserRole.countDocuments({
-        userId: { $in: activeUserIds },
-        roleId: ROLE_IDS.customer
-      });
-  
-      const staffCount = await UserRole.countDocuments({
-        userId: { $in: activeUserIds },
-        roleId: ROLE_IDS.staff
-      });
-  
-      const chefCount = await UserRole.countDocuments({
-        userId: { $in: activeUserIds },
-        roleId: ROLE_IDS.chef
-      });
-  
+
+   
+      const totalUsers = adminCount + customerCount + staffCount + chefCount;
+
       res.json({
         totalUsers,
         adminCount,
@@ -337,7 +364,7 @@ exports.getFeedbackPieChartData = async (req, res) => {
       }
     ]);
 
-    console.log('Pie chart aggregate result:', pieChartData);
+
 
     const total = pieChartData.reduce((sum, item) => sum + item.value, 0);
 
