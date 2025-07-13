@@ -7,40 +7,56 @@ const Guest = require("../models/Guest");
 
 exports.getAllReservation = async (req, res) => {
     try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 6;
+        const skip = (page - 1) * limit;
+
+        const totalBookings = await Booking.countDocuments();
+
         const bookings = await Booking.find()
             .populate("userId", "fullname email phoneNumber")
             .populate("tableId", "tableNumber capacity")
             .sort({ _id: -1 })
+            .skip(skip)
+            .limit(limit)
             .lean();
 
-        const bookingIds = bookings.map(booking => booking._id);
+        const bookingIds = bookings.map(b => b._id);
 
         const bookingDishes = await BookingDish.find({ bookingId: { $in: bookingIds } })
-            .populate("dishId", "name price")
+            .populate("dishId", "name imageUrl price")
             .lean();
 
         const guests = await Guest.find({ bookingId: { $in: bookingIds } }).lean();
 
-        const bookingsWithDetails = bookings.map(booking => {
-            return {
-                ...booking,
-                dishes: bookingDishes.filter(dish => dish.bookingId.toString() === booking._id.toString()),
-                guest: guests.find(guest => guest.bookingId.toString() === booking._id.toString()) || null
-            };
-        });
+        const bookingsWithDetails = bookings.map(booking => ({
+            ...booking,
+            dishes: bookingDishes.filter(d => d.bookingId.toString() === booking._id.toString()),
+            guest: guests.find(g => g.bookingId.toString() === booking._id.toString()) || null,
+        }));
 
-        res.status(200).json(bookingsWithDetails);
+        res.status(200).json({
+            data: bookingsWithDetails,
+            totalPages: Math.ceil(totalBookings / limit),
+        });
     } catch (error) {
-        console.error("Error when getting table order list:", error.message);
-        res.status(500).json({ message: "Error getting table order list!", error: error.message });
+        console.error("ERROR in getAllReservation:", error);
+        res.status(500).json({ message: "Internal Server Error", error: error.message });
     }
 };
 
 exports.getStaffReservation = async (req, res) => {
     try {
+        const { page = 1, limit = 6 } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const total = await Booking.countDocuments({
+            status: { $in: ["Confirmed", "Canceled", "confirmed", "canceled"] }
+        });
         const bookings = await Booking.find({
             status: { $in: ["Confirmed", "Canceled", "confirmed", "canceled"] }
         })
+            .skip(skip)
+            .limit(parseInt(limit))
             .populate("userId", "fullname email phoneNumber")
             .populate("tableId", "tableNumber capacity")
             .sort({ _id: -1 })
@@ -67,7 +83,11 @@ exports.getStaffReservation = async (req, res) => {
                 guest: guests.find(guest => guest.bookingId.toString() === booking._id.toString()) || null
             };
         });
-        res.status(200).json(bookingsWithDetails);
+
+        res.status(200).json({
+            data: bookingsWithDetails,
+            totalPages: Math.ceil(total / limit)
+        });
     } catch (error) {
         console.error("Error when getting table order list:", error.message);
         res.status(500).json({ message: "Error getting table order list!", error: error.message });
@@ -125,8 +145,8 @@ exports.getAvailableTables = async (req, res) => {
 
                 if (
                     (requestedStart >= bookingStart && requestedStart < bookingEnd) || 
-                    (requestedEnd > bookingStart && requestedEnd <= bookingEnd) ||     
-                    (requestedStart <= bookingStart && requestedEnd >= bookingEnd)     
+                    (requestedEnd > bookingStart && requestedEnd <= bookingEnd) ||  
+                    (requestedStart <= bookingStart && requestedEnd >= bookingEnd)
                 ) {
                     isAvailable = false;
                     break;
@@ -290,7 +310,8 @@ exports.updateReservationStatus = async (req, res) => {
 const mongoose = require("mongoose");
 exports.filterReservations = async (req, res) => {
     try {
-        const { fromDate, toDate, dateRange, orderType, status, searchText } = req.query;
+        const { fromDate, toDate, dateRange, orderType, status, searchText, page = 1, limit = 6 } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
 
         let filter = {};
         const today = new Date();
@@ -311,7 +332,9 @@ exports.filterReservations = async (req, res) => {
                     };
                     break;
                 case "last7days":
-                    filter.bookingDate = { $gte: new Date(today.setDate(today.getDate() - 7)), $lte: endOfToday };
+                    const last7 = new Date();
+                    last7.setDate(last7.getDate() - 7);
+                    filter.bookingDate = { $gte: last7, $lte: endOfToday };
                     break;
                 case "thisMonth":
                     filter.bookingDate = {
@@ -331,52 +354,50 @@ exports.filterReservations = async (req, res) => {
         if (fromDate || toDate) {
             filter.bookingDate = {};
             if (fromDate) filter.bookingDate.$gte = new Date(fromDate);
-            if (toDate) {
-                filter.bookingDate.$lte = new Date(new Date(toDate).setHours(23, 59, 59, 999));
-            }
+            if (toDate) filter.bookingDate.$lte = new Date(new Date(toDate).setHours(23, 59, 59, 999));
         }
 
-
-        if (orderType || status) {
-            filter.$and = [];
-            if (orderType) filter.$and.push({ orderType });
-            if (status) filter.$and.push({ status: { $regex: `^${status}$`, $options: "i" } });
+        if (orderType) {
+            filter.orderType = orderType;
         }
 
+        if (status) {
+            filter.$expr = {
+                $eq: [{ $toLower: "$status" }, status.toLowerCase()]
+            };
+        }
+
+        // Tìm userId và bookingId từ searchText
         if (searchText) {
-            const searchRegex = { $regex: searchText, $options: "i" };
+            const searchRegex = new RegExp(searchText, "i");
 
             const users = await User.find({ fullname: searchRegex }).select("_id").lean();
-            const userIds = users.map(user => user._id);
+            const userIds = users.map(u => u._id);
 
             const guests = await Guest.find({ name: searchRegex }).select("bookingId").lean();
-            const bookingIdsFromGuest = guests.map(guest => guest.bookingId);
+            const guestBookingIds = guests.map(g => g.bookingId);
 
-            if (userIds.length > 0 || bookingIdsFromGuest.length > 0) {
+            if (userIds.length > 0 || guestBookingIds.length > 0) {
                 filter.$or = [
                     ...(userIds.length > 0 ? [{ userId: { $in: userIds } }] : []),
-                    ...(bookingIdsFromGuest.length > 0 ? [{ _id: { $in: bookingIdsFromGuest } }] : []),
+                    ...(guestBookingIds.length > 0 ? [{ _id: { $in: guestBookingIds } }] : [])
                 ];
             } else {
-                return res.status(200).json([]);
+                return res.status(200).json({ data: [], totalPages: 0 });
             }
         }
+
+        const totalCount = await Booking.countDocuments(filter);
 
         let bookings = await Booking.find(filter)
             .populate("userId", "fullname email phoneNumber")
             .populate("tableId", "tableNumber capacity")
-            // .sort({ bookingDate: 1, startTime: 1 })
             .sort({ _id: -1 })
+            .skip(skip)
+            .limit(parseInt(limit))
             .lean();
-        // const statusOrder = { pending: 1, confirmed: 2, canceled: 3 };
-        // bookings = bookings.sort((a, b) => {
-        //     const statusA = statusOrder[a.status.toLowerCase()] || 4;
-        //     const statusB = statusOrder[b.status.toLowerCase()] || 4;
-        //     return statusA - statusB || new Date(a.bookingDate) - new Date(b.bookingDate) || a.startTime.localeCompare(b.startTime);
-        // });
 
-
-        const bookingIds = bookings.map(booking => booking._id);
+        const bookingIds = bookings.map(b => b._id);
 
         const bookingDishes = await BookingDish.find({ bookingId: { $in: bookingIds } })
             .populate("dishId", "name imageUrl price")
@@ -384,29 +405,46 @@ exports.filterReservations = async (req, res) => {
 
         const guests = await Guest.find({ bookingId: { $in: bookingIds } }).lean();
 
-        bookings = bookings.map(booking => ({
-            ...booking,
-            dishes: bookingDishes.filter(dish => dish.bookingId.toString() === booking._id.toString()),
-            guest: guests.find(guest => guest.bookingId.toString() === booking._id.toString()) || null,
+        const bookingsWithDetails = bookings.map(b => ({
+            ...b,
+            dishes: bookingDishes.filter(d => d.bookingId.toString() === b._id.toString()),
+            guest: guests.find(g => g.bookingId.toString() === b._id.toString()) || null,
         }));
 
+        return res.status(200).json({
+            data: bookingsWithDetails,
+            totalPages: Math.ceil(totalCount / limit)
+        });
 
-        res.status(200).json(bookings);
     } catch (error) {
         console.error("ERROR in filterReservations:", error);
-        res.status(500).json({ message: "Internal Server Error", error: error.message });
+        return res.status(500).json({ message: "Internal Server Error", error: error.message });
     }
 };
 
 exports.filterChefReservations = async (req, res) => {
     try {
-        const { fromDate, toDate, dateRange, orderType, searchText, status } = req.query;
+        const {
+            fromDate,
+            toDate,
+            dateRange,
+            orderType,
+            searchText,
+            status,
+            page = 1,
+            limit = 6
+        } = req.query;
+
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
         let filter = {
             status: { $in: ["Confirmed", "Canceled", "confirmed", "canceled"] }
         };
 
         if (status) {
-            filter.status = { $regex: new RegExp(`^${status}$`, "i") };
+            filter.$expr = {
+                $eq: [{ $toLower: "$status" }, status.toLowerCase()]
+            };
         }
 
         const today = new Date();
@@ -427,7 +465,9 @@ exports.filterChefReservations = async (req, res) => {
                     };
                     break;
                 case "last7days":
-                    filter.bookingDate = { $gte: new Date(today.setDate(today.getDate() - 7)), $lte: endOfToday };
+                    const last7 = new Date();
+                    last7.setDate(last7.getDate() - 7);
+                    filter.bookingDate = { $gte: last7, $lte: endOfToday };
                     break;
                 case "thisMonth":
                     filter.bookingDate = {
@@ -447,9 +487,7 @@ exports.filterChefReservations = async (req, res) => {
         if (fromDate || toDate) {
             filter.bookingDate = {};
             if (fromDate) filter.bookingDate.$gte = new Date(fromDate);
-            if (toDate) {
-                filter.bookingDate.$lte = new Date(new Date(toDate).setHours(23, 59, 59, 999));
-            }
+            if (toDate) filter.bookingDate.$lte = new Date(new Date(toDate).setHours(23, 59, 59, 999));
         }
 
         if (orderType) {
@@ -457,7 +495,7 @@ exports.filterChefReservations = async (req, res) => {
         }
 
         if (searchText) {
-            const searchRegex = { $regex: searchText, $options: "i" };
+            const searchRegex = new RegExp(searchText, "i");
 
             const users = await User.find({ fullname: searchRegex }).select("_id").lean();
             const userIds = users.map(user => user._id);
@@ -471,20 +509,18 @@ exports.filterChefReservations = async (req, res) => {
                     ...(bookingIdsFromGuest.length > 0 ? [{ _id: { $in: bookingIdsFromGuest } }] : []),
                 ];
             } else {
-                return res.status(200).json([]);
+                return res.status(200).json({ data: [], totalPages: 0 });
             }
         }
 
+        const total = await Booking.countDocuments(filter);
+
         let bookings = await Booking.find(filter)
+            .skip(skip)
+            .limit(parseInt(limit))
             .populate("userId", "fullname email phoneNumber")
             .populate("tableId", "tableNumber capacity")
             .sort({ _id: -1 })
-            // .sort({
-            //     status: -1,
-            //     bookingDate: 1,
-            //     startTime: 1,
-            //     createdAt: 1
-            // })
             .lean();
 
         const bookingIds = bookings.map(booking => booking._id);
@@ -501,9 +537,12 @@ exports.filterChefReservations = async (req, res) => {
             guest: guests.find(guest => guest.bookingId.toString() === booking._id.toString()) || null,
         }));
 
-        res.status(200).json(bookings);
+        res.status(200).json({
+            data: bookings,
+            totalPages: Math.ceil(total / parseInt(limit))
+        });
     } catch (error) {
-        console.error("ERROR in filterReservations:", error);
+        console.error("ERROR in filterChefReservations:", error);
         res.status(500).json({ message: "Internal Server Error", error: error.message });
     }
 };
