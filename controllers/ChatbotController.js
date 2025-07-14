@@ -7,8 +7,18 @@ const Dish = require("../models/Dish");
 require('dotenv').config();
 
 const projectId = 'restaurantchatbot-rw9q';
-const keyPath = path.join(__dirname, '../dialogflow-key.json');
-const sessionClient = new dialogflow.SessionsClient({ keyFilename: keyPath });
+
+// Use environment variables for credentials instead of file path
+let sessionClient;
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+    // Use credentials from environment variable (for production)
+    const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+    sessionClient = new dialogflow.SessionsClient({ credentials });
+} else {
+    // Use file path for local development
+    const keyPath = path.join(__dirname, '../dialogflow-key.json');
+    sessionClient = new dialogflow.SessionsClient({ keyFilename: keyPath });
+}
 
 const isValidImageUrl = (url) => {
     if (!url) return false;
