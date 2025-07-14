@@ -141,6 +141,7 @@ exports.getStaff = async (req, res) => {
         const userIds = userRoles.map((ur) => ur.userId);
         const employees = await User.find({ _id: { $in: userIds } })
             .select("-password")
+            .sort({ createdAt: -1 })
             .lean();
 
         res.status(200).json({ success: true, employees });
@@ -161,6 +162,7 @@ exports.getChef = async (req, res) => {
         const userIds = userRoles.map((ur) => ur.userId);
         const employees = await User.find({ _id: { $in: userIds } })
             .select("-password")
+            .sort({ createdAt: -1 })
             .lean();
 
         res.status(200).json({ success: true, employees });

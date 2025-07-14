@@ -16,7 +16,7 @@ exports.getLineChartData = async (req, res) => {
         {
           $match: {
             createdAt: {
-              $gte: new Date(`${year}-01-01T00:00:00Z`),  // Đảm bảo thời gian chuẩn
+              $gte: new Date(`${year}-01-01T00:00:00Z`),  
               $lte: new Date(`${year}-12-31T23:59:59Z`)
             },
             isActive: true
@@ -104,29 +104,56 @@ const ROLE_IDS = {
   exports.getUserCounts = async (req, res) => {
     try {
       const activeUserIds = await User.find({ isActive: true }).distinct("_id");
-  
-      const totalUsers = activeUserIds.length;
 
-      const adminCount = await UserRole.countDocuments({
-        userId: { $in: activeUserIds },
-        roleId: ROLE_IDS.admin
+
+      const roleCounts = await UserRole.aggregate([
+        {
+          $match: {
+            userId: { $in: activeUserIds }
+          }
+        },
+        {
+          $group: {
+            _id: '$roleId',
+            uniqueUserCount: { $addToSet: '$userId' }
+          }
+        },
+        {
+          $project: {
+            roleId: '$_id',
+            userCount: { $size: '$uniqueUserCount' }
+          }
+        }
+      ]);
+
+
+      let adminCount = 0;
+      let customerCount = 0;
+      let staffCount = 0;
+      let chefCount = 0;
+
+
+      roleCounts.forEach(role => {
+        const roleIdStr = role.roleId.toString();
+        switch (roleIdStr) {
+          case ROLE_IDS.admin:
+            adminCount = role.userCount;
+            break;
+          case ROLE_IDS.customer:
+            customerCount = role.userCount;
+            break;
+          case ROLE_IDS.staff:
+            staffCount = role.userCount;
+            break;
+          case ROLE_IDS.chef:
+            chefCount = role.userCount;
+            break;
+        }
       });
-  
-      const customerCount = await UserRole.countDocuments({
-        userId: { $in: activeUserIds },
-        roleId: ROLE_IDS.customer
-      });
-  
-      const staffCount = await UserRole.countDocuments({
-        userId: { $in: activeUserIds },
-        roleId: ROLE_IDS.staff
-      });
-  
-      const chefCount = await UserRole.countDocuments({
-        userId: { $in: activeUserIds },
-        roleId: ROLE_IDS.chef
-      });
-  
+
+   
+      const totalUsers = adminCount + customerCount + staffCount + chefCount;
+
       res.json({
         totalUsers,
         adminCount,
@@ -139,7 +166,6 @@ const ROLE_IDS = {
     }
   };
   
-// Thêm function mới để thống kê tổng số feedback theo ngày tháng năm
 exports.getFeedbackCount = async (req, res) => {
   try {
     const { year, month, day } = req.query;
@@ -148,20 +174,20 @@ exports.getFeedbackCount = async (req, res) => {
     let startDate, endDate;
     
     if (year && month && day) {
-      // Lọc theo ngày cụ thể
+
       startDate = new Date(`${year}-${month}-${day}T00:00:00Z`);
       endDate = new Date(`${year}-${month}-${day}T23:59:59Z`);
     } else if (year && month) {
-      // Lọc theo tháng
+
       const daysInMonth = new Date(year, month, 0).getDate();
       startDate = new Date(`${year}-${month}-01T00:00:00Z`);
       endDate = new Date(`${year}-${month}-${daysInMonth}T23:59:59Z`);
     } else if (year) {
-      // Lọc theo năm
+
       startDate = new Date(`${year}-01-01T00:00:00Z`);
       endDate = new Date(`${year}-12-31T23:59:59Z`);
     } else {
-      // Mặc định là năm hiện tại
+
       const currentYear = currentDate.getFullYear();
       startDate = new Date(`${currentYear}-01-01T00:00:00Z`);
       endDate = new Date(`${currentYear}-12-31T23:59:59Z`);
@@ -187,7 +213,6 @@ exports.getFeedbackCount = async (req, res) => {
   }
 };
 
-// Thêm function để thống kê feedback theo từng món ăn
 exports.getFeedbackByDish = async (req, res) => {
   try {
     const { year, month, day } = req.query;
@@ -248,7 +273,7 @@ exports.getFeedbackByDish = async (req, res) => {
           totalFeedback: 1,
           averageRating: { $round: ['$averageRating', 1] },
           ratingDistribution: 1,
-          percentage: 1 // Sẽ tính sau
+          percentage: 1 
         }
       },
       {
@@ -256,10 +281,10 @@ exports.getFeedbackByDish = async (req, res) => {
       }
     ]);
 
-    // Tính tổng số feedback để tính phần trăm
+
     const totalFeedbackCount = feedbackStats.reduce((sum, item) => sum + item.totalFeedback, 0);
 
-    // Thêm phần trăm cho mỗi món ăn
+
     const result = feedbackStats.map(item => ({
       ...item,
       percentage: totalFeedbackCount > 0 ? Math.round((item.totalFeedback / totalFeedbackCount) * 100) : 0
@@ -281,7 +306,6 @@ exports.getFeedbackByDish = async (req, res) => {
   }
 };
 
-// Thêm function để lấy dữ liệu cho biểu đồ tròn
 exports.getFeedbackPieChartData = async (req, res) => {
   try {
     const { year, month, day } = req.query;
@@ -329,31 +353,45 @@ exports.getFeedbackPieChartData = async (req, res) => {
           name: { $first: '$dish.name' },
           value: { $sum: 1 },
           averageRating: { $avg: '$rating' },
-          color: { $first: '$dish.imageUrl' } // Có thể thay bằng màu ngẫu nhiên
+          dishImage: { $first: '$dish.imageUrl' }
         }
       },
       {
         $sort: { value: -1 }
       },
       {
-        $limit: 10 // Chỉ lấy top 10 món ăn có nhiều feedback nhất
+        $limit: 10
       }
     ]);
 
-    // Tính tổng để tính phần trăm
+
+
     const total = pieChartData.reduce((sum, item) => sum + item.value, 0);
 
-    // Thêm phần trăm và màu ngẫu nhiên
+
     const colors = [
       '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
-      '#FF9F40', '#FF6384', '#C9CBCF', '#4BC0C0', '#FF6384'
+      '#FF9F40', '#C9CBCF', '#4BC0C0', '#FF6384', '#00C49F',
+      '#FFB347', '#B19CD9', '#FFD700', '#FF7F50', '#6495ED',
+      '#DC143C', '#008B8B', '#B8860B', '#006400', '#8B008B',
+      '#FF4500', '#2E8B57', '#A0522D', '#D2691E', '#5F9EA0',
+      '#7FFF00', '#D2691E', '#FF1493', '#1E90FF', '#FFDAB9',
+      '#E9967A', '#8FBC8F', '#483D8B', '#00CED1', '#9400D3',
+      '#FF6347', '#4682B4', '#008080', '#B22222', '#228B22',
+      '#DAA520', '#ADFF2F', '#F08080', '#20B2AA', '#87CEFA',
+      '#778899', '#B0C4DE', '#FFFFE0', '#00FA9A', '#48D1CC',
+      '#C71585', '#191970', '#FFE4E1', '#FFE4B5', '#FFDEAD',
+      '#6A5ACD', '#708090', '#00FF7F', '#4682B4', '#D2B48C',
+      '#008080', '#D8BFD8', '#FF6347', '#40E0D0', '#EE82EE',
+      '#F5DEB3', '#F5F5DC', '#F5F5F5', '#FFFF00', '#9ACD32'
     ];
 
     const result = pieChartData.map((item, index) => ({
       ...item,
       percentage: total > 0 ? Math.round((item.value / total) * 100) : 0,
-      averageRating: Math.round(item.averageRating * 10) / 10, // Làm tròn đến 1 chữ số thập phân
-      color: colors[index % colors.length]
+      averageRating: Math.round(item.averageRating * 10) / 10,
+      color: colors[index % colors.length],
+      dishImage: item.dishImage || '',
     }));
 
     res.json({
@@ -368,7 +406,7 @@ exports.getFeedbackPieChartData = async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ message: 'Lỗi server', error: error.message });
+    res.status(500).json({ message: 'Error server', error: error.message });
   }
 };
   

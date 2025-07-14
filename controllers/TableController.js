@@ -38,7 +38,9 @@ exports.getAvailableTables = async (req, res) => {
 
 exports.getAllTables = async (req, res) => {
     try {
-        const tables = await Table.find().sort({ tableNumber: 1 });
+        const tables = await Table.find();
+        // const tables = await Table.find().sort({ tableNumber: 1 });
+
         res.status(200).json({
             success: true,
             message: "List of tables fetched successfully",
@@ -139,12 +141,12 @@ exports.deleteTable = async (req, res) => {
             });
         }
 
-        if (existingTable.status === "occupied" || existingTable.status === "reserved") {
-            return res.status(400).json({
-                success: false,
-                message: "Cannot delete table that is currently occupied or reserved",
-            });
-        }
+        // if (existingTable.status === "occupied" || existingTable.status === "reserved") {
+        //     return res.status(400).json({
+        //         success: false,
+        //         message: "Cannot delete table that is currently occupied or reserved",
+        //     });
+        // }
 
         await Table.deleteOne({ tableNumber });
 
