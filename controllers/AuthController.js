@@ -31,7 +31,7 @@ exports.login2 = {
       if (!user.isActive) {
         return res.redirect(`${process.env.FRONTEND_URL}/login?error=Your account is not verified or has been banned. Please verify your email or contact support.`);
       }
-      
+
 
       const existingUserRole = await UserRole.findOne({ userId: user._id });
       if (!existingUserRole) {
@@ -54,6 +54,8 @@ exports.login2 = {
 
       res.cookie("token", token, {
         httpOnly: false,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
         maxAge: 1 * 24 * 60 * 60 * 1000,
       });
 
@@ -78,7 +80,7 @@ exports.login2 = {
       if (!user.isActive) {
         return res.redirect(`${process.env.FRONTEND_URL}/login?error=Your account is not verified or has been banned. Please verify your email or contact support.`);
       }
-      
+
       if (!user.rankId) {
         let defaultRank = await Rank.findOne({ rankName: "Bronze" });
         if (!defaultRank) {
@@ -164,8 +166,8 @@ exports.register = async (req, res) => {
         success: false,
         message: "Phone number must start with 0 and contain 9 to 11 digits.",
       });
-    }   
-    
+    }
+
 
     if (password.length > 50 || /\s/.test(password)) {
       return res.status(400).json({
@@ -210,11 +212,11 @@ exports.register = async (req, res) => {
 
     const defaultRoleId = "67ac64bbe072694cafa16e78";
 
-    const existingUserRole = await UserRole.findOne({ 
-      userId: newUser._id, 
-      roleId: defaultRoleId 
+    const existingUserRole = await UserRole.findOne({
+      userId: newUser._id,
+      roleId: defaultRoleId
     });
-    
+
     if (!existingUserRole) {
       await UserRole.create({ userId: newUser._id, roleId: defaultRoleId });
     }
@@ -374,7 +376,7 @@ exports.verifyOtp = async (req, res) => {
     const user = await User.findOne({ email });
     const now = new Date();
     const otpAge = (now - user.updatedAt) / 1000; // đơn vị: giây
-    
+
     if (otpAge > 300) {
       return res.status(400).json({
         success: false,
@@ -382,7 +384,7 @@ exports.verifyOtp = async (req, res) => {
         message: "OTP has expired. Please request a new one.",
       });
     }
-    
+
     if (!user) {
       return res.status(404).json({
         success: false,
