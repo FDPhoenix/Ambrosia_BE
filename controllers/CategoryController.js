@@ -17,7 +17,22 @@ exports.getAllCategories = async (req, res) => {
         });
     }
 };
+exports.getAllCategoriesAdmin = async (req, res) => {
+    try {
+        const categories = await Category.find();
 
+        return res.status(200).json({
+            message: "Categories retrieved successfully.",
+            success: true,
+            categories
+        });
+    } catch (error) {
+        return res.status(500).json({
+            message: "Server error.",
+            success: false
+        });
+    }
+};
 exports.createCategory = async (req, res) => {
     try {
         const { name, description } = req.body;
