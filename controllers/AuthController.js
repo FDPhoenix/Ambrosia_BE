@@ -9,6 +9,8 @@ const passport = require("passport");
 exports.login2 = {
   googleCallback: async (req, res) => {
     try {
+          console.log("Google callback req.user:", req.user); // Thêm dòng này
+
       const user = req.user;
       if (!user) {
         return res.status(400).json({
@@ -181,8 +183,7 @@ exports.register = async (req, res) => {
       if (!isExist.isActive) {
         return res.status(403).json({
           success: false,
-          code: 1001,
-          message: "Your account is not verified or has been banned. Please verify your email or contact support.",
+          message: "Your account is banned. Cannot register.",
         });
       }
       return res.status(400).json({
@@ -255,6 +256,14 @@ exports.login = async (req, res) => {
       });
     }
 
+    // 🔒 Nếu user không có password (thường là social login)
+    if (!user.password) {
+      return res.status(400).json({
+        message: "This account uses Google/Facebook login. Please login using that method or reset your password.",
+        success: false,
+      });
+    }
+
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
       return res.status(401).json({
@@ -264,15 +273,9 @@ exports.login = async (req, res) => {
     }
 
     if (!user.isActive) {
-      const otp = generateRandomString();
-      user.otp = otp;
-
-      await user.save();
-      sendEmailOtp(user.fullname, user.email, otp);
-
       return res.status(403).json({
         code: 1001,
-        message: "User is not active. Please verify OTP.",
+        message: "Your account is banned. Please contact support.",
         success: false,
       });
     }
@@ -295,7 +298,7 @@ exports.login = async (req, res) => {
     const { password: _, ...userWithoutPassword } = user.toObject();
 
     // Map roleName to redirect path
-    let redirect = "/"; // default
+    let redirect = "/";
     if (roleNames.includes("admin")) {
       redirect = "/manage/dashboard";
     } else if (roleNames.includes("staff")) {
@@ -393,14 +396,14 @@ exports.verifyOtp = async (req, res) => {
       });
     }
 
-    // ✅ OTP phải đúng bất kể user.active là gì
-    if (user.otp !== otp) {
-      return res.status(400).json({
+
+    if (!user || !user.isActive) {
+      return res.status(403).json({
         success: false,
-        code: 1011,
-        message: "Invalid OTP.",
+        message: "Account is banned or invalid.",
       });
     }
+    
 
     user.isActive = true;
     user.otp = undefined;
@@ -439,6 +442,7 @@ exports.forgotPassword = async (req, res) => {
         message: "Your account is banned. Cannot reset password.",
       });
     }
+    
 
     const otp = generateRandomString();
     user.otp = otp;
