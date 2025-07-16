@@ -37,8 +37,12 @@ exports.createCategory = async (req, res) => {
     try {
         const { name, description } = req.body;
 
-        // Check if the category already exists
-        const existingCategory = await Category.findOne({ name });
+        const trimmedName = name.trim().toLowerCase();
+
+        const existingCategory = await Category.findOne({ 
+            name: { $regex: new RegExp(`^${trimmedName}$`, 'i') }
+        });
+        
         if (existingCategory) {
             return res.status(400).json({
                 message: "Category already exists.",
@@ -46,7 +50,7 @@ exports.createCategory = async (req, res) => {
             });
         }
 
-        const newCategory = new Category({ name, description });
+        const newCategory = new Category({ name: name.trim(), description });
         await newCategory.save();
 
         return res.status(201).json({
