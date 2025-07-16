@@ -50,7 +50,11 @@ app.use(
     secret: process.env.SECRET_KEY || "your_session_secret",
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 },
+    cookie: {
+      secure: false, // Thử false trước
+      sameSite: 'lax', // Thử lax thay vì none
+      maxAge: 24 * 60 * 60 * 1000
+    },
   })
 );
 
