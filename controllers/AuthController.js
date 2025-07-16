@@ -58,8 +58,8 @@ exports.login2 = {
       // Log cookie options
       const cookieOptions = {
         httpOnly: false,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        secure: process.env.NODE_ENV == "production",
+        sameSite: process.env.NODE_ENV == "production" ? "none" : "lax",
         maxAge: 1 * 24 * 60 * 60 * 1000,
       };
       console.log("[GoogleCallback] Set-Cookie options:", cookieOptions);
