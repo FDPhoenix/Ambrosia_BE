@@ -9,10 +9,10 @@ const passport = require("passport");
 exports.login2 = {
   googleCallback: async (req, res) => {
     try {
-          console.log("Google callback req.user:", req.user); // Thêm dòng này
-
+      console.log("[GoogleCallback] req.user:", req.user); // Log user object
       const user = req.user;
       if (!user) {
+        console.log("[GoogleCallback] Không có user trong req.user");
         return res.status(400).json({
           success: false,
           message: "User not authenticated.",
@@ -31,6 +31,7 @@ exports.login2 = {
         await user.save();
       }
       if (!user.isActive) {
+        console.log("[GoogleCallback] User không active");
         return res.redirect(`${process.env.FRONTEND_URL}/login?error=Your account is not verified or has been banned. Please verify your email or contact support.`);
       }
 
@@ -54,16 +55,20 @@ exports.login2 = {
 
       const { password: _, ...userWithoutPassword } = user.toObject();
 
-      res.cookie("token", token, {
+      // Log cookie options
+      const cookieOptions = {
         httpOnly: false,
         secure: process.env.NODE_ENV == "production",
         sameSite: process.env.NODE_ENV == "production" ? "none" : "lax",
         maxAge: 1 * 24 * 60 * 60 * 1000,
-      });
+      };
+      console.log("[GoogleCallback] Set-Cookie options:", cookieOptions);
+      res.cookie("token", token, cookieOptions);
+      console.log("[GoogleCallback] Đã set cookie token cho user:", user.email);
 
       res.redirect(`${process.env.FRONTEND_URL}/login?success=Welcome back, ${user.fullname}!`);
     } catch (error) {
-      console.error("Error in Google callback:", error);
+      console.error("[GoogleCallback] Error in Google callback:", error);
       res.redirect(`${process.env.FRONTEND_URL}/login?error=Google login failed`);
     }
   },
