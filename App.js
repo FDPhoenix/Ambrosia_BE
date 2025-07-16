@@ -59,6 +59,7 @@ app.use(passport.session());
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser()); // Di chuyển lên đây, trước các routes
 
 app.use('/auth', authRouter);
 app.use("", oauth2);
@@ -85,7 +86,7 @@ app.use('/reservation', reservationRouter);
 app.use("/news", newsRouter);
 
 app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
+// app.use(cookieParser()); // Xóa dòng này vì đã di chuyển lên trên
 
 app.listen(process.env.PORT, () => {
   connectDB();
