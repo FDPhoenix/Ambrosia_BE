@@ -9,10 +9,8 @@ const passport = require("passport");
 exports.login2 = {
   googleCallback: async (req, res) => {
     try {
-      console.log("[GoogleCallback] req.user:", req.user); // Log user object
       const user = req.user;
       if (!user) {
-        console.log("[GoogleCallback] Không có user trong req.user");
         return res.status(400).json({
           success: false,
           message: "User not authenticated.",
@@ -31,7 +29,6 @@ exports.login2 = {
         await user.save();
       }
       if (!user.isActive) {
-        console.log("[GoogleCallback] User không active");
         return res.redirect(`${process.env.FRONTEND_URL}/login?error=Your account is not verified or has been banned. Please verify your email or contact support.`);
       }
 
@@ -55,20 +52,8 @@ exports.login2 = {
 
       const { password: _, ...userWithoutPassword } = user.toObject();
 
-      // Log cookie options
-
-      console.log("[GoogleCallback] Environment check:");
-      console.log("[GoogleCallback] NODE_ENV:", process.env.NODE_ENV);
-      console.log("[GoogleCallback] FRONTEND_URL:", process.env.FRONTEND_URL);
-      console.log("[GoogleCallback] Is production:", process.env.NODE_ENV === "production");
-      console.log("[GoogleCallback] Request protocol:", req.protocol);
-      console.log("[GoogleCallback] Request hostname:", req.hostname);
-      console.log("[GoogleCallback] Request headers:", req.headers);
-      
       let cookieOptions;
-      
       if (process.env.NODE_ENV === "production") {
-        // Thử cấu hình cho production
         cookieOptions = {
           httpOnly: false,
           secure: true,
@@ -77,7 +62,6 @@ exports.login2 = {
           path: "/"
         };
       } else {
-        // Cấu hình cho development
         cookieOptions = {
           httpOnly: false,
           secure: false,
@@ -86,18 +70,10 @@ exports.login2 = {
           path: "/"
         };
       }
-      
-      console.log("[GoogleCallback] Set-Cookie options:", cookieOptions);
       res.cookie("token", token, cookieOptions);
-      console.log("[GoogleCallback] Đã set cookie token cho user:", user.email);
-      
-      console.log("[GoogleCallback] Response headers after setting cookie:", res.getHeaders());
-      console.log("[GoogleCallback] Redirecting to:", `${process.env.FRONTEND_URL}/login?success=Welcome back, ${user.fullname}!&token=${token}`);
-
       res.redirect(`${process.env.FRONTEND_URL}/login?success=Welcome back, ${user.fullname}!&token=${token}`);
     } catch (error) {
-      console.error("[GoogleCallback] Error in Google callback:", error);
-      res.redirect(`${process.env.FRONTEND_URL}/login?error=Google login failed`);
+       res.redirect(`${process.env.FRONTEND_URL}/login?error=Google login failed`);
     }
   },
 
@@ -153,10 +129,9 @@ exports.login2 = {
         maxAge: 1 * 24 * 60 * 60 * 1000,
       });
 
-      res.redirect(`${process.env.FRONTEND_URL}/login?success=Welcome back, ${user.fullname}!`);
+      res.redirect(`${process.env.FRONTEND_URL}/login?success=Welcome back, ${user.fullname}!&token=${token}`);
     } catch (error) {
-      console.error("Error in Facebook callback:", error);
-      res.redirect(`${process.env.FRONTEND_URL}/login?error=Facebook login failed`);
+        res.redirect(`${process.env.FRONTEND_URL}/login?error=Facebook login failed`);
     }
   },
 
@@ -262,7 +237,6 @@ exports.register = async (req, res) => {
       message: "Registration successful. Please verify your email with the OTP sent.",
     });
   } catch (error) {
-    console.error("Error during registration:", error);
     res.status(500).json({
       success: false,
       message: "Internal server error. Please try again later.",
@@ -355,7 +329,6 @@ exports.login = async (req, res) => {
       });
 
   } catch (error) {
-    console.error("Error during login:", error);
     res.status(500).json({
       message: "Internal Server Error. Please try again later.",
       success: false,
@@ -371,7 +344,6 @@ exports.logout = async (req, res) => {
       message: "Logged out successfully.",
     });
   } catch (error) {
-    console.error("Error during logout:", error);
     res.status(500).json({
       success: false,
       message: "Internal server error. Please try again later.",
