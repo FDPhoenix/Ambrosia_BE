@@ -56,6 +56,7 @@ exports.login2 = {
       const { password: _, ...userWithoutPassword } = user.toObject();
 
       // Log cookie options
+
       console.log("[GoogleCallback] Environment check:");
       console.log("[GoogleCallback] NODE_ENV:", process.env.NODE_ENV);
       console.log("[GoogleCallback] FRONTEND_URL:", process.env.FRONTEND_URL);
