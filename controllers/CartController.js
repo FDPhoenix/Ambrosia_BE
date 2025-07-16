@@ -67,6 +67,7 @@ exports.getCartItem = async (req, res) => {
             categoryName: item.dishId.categoryId.name,
             price: item.dishId.price,
             quantity: item.quantity,
+            isAvailable: item.dishId.isAvailable
         }));
 
         res.status(200).json({
@@ -105,7 +106,7 @@ exports.updateQuantity = async (req, res) => {
             message: "Quantity updated",
             cartItem,
             success: true
-        }); 
+        });
     } catch (error) {
         console.log(error);
 

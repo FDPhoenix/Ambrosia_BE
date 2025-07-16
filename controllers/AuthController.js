@@ -9,6 +9,8 @@ const passport = require("passport");
 exports.login2 = {
   googleCallback: async (req, res) => {
     try {
+          console.log("Google callback req.user:", req.user); // Thêm dòng này
+
       const user = req.user;
       if (!user) {
         return res.status(400).json({
@@ -31,10 +33,12 @@ exports.login2 = {
       if (!user.isActive) {
         return res.redirect(`${process.env.FRONTEND_URL}/login?error=Your account is not verified or has been banned. Please verify your email or contact support.`);
       }
-      
 
-      const defaultRoleId = "67ac64bbe072694cafa16e78";
-      await UserRole.create({ userId: user._id, roleId: defaultRoleId });
+
+      const existingUserRole = await UserRole.findOne({ userId: user._id });
+      if (!existingUserRole) {
+        await UserRole.create({ userId: user._id, roleId: "67ac64bbe072694cafa16e78" });
+      }
 
       const token = jwt.sign(
         {
@@ -42,7 +46,7 @@ exports.login2 = {
           rankId: user.rankId,
           image: user.profileImage,
           fullname: user.fullname,
-          roleId: [defaultRoleId],
+          roleId: ["67ac64bbe072694cafa16e78"],
         },
         process.env.JWT_SECRET,
         { expiresIn: "1d" }
@@ -52,6 +56,8 @@ exports.login2 = {
 
       res.cookie("token", token, {
         httpOnly: false,
+        secure: process.env.NODE_ENV == "production",
+        sameSite: process.env.NODE_ENV == "production" ? "none" : "lax",
         maxAge: 1 * 24 * 60 * 60 * 1000,
       });
 
@@ -76,7 +82,7 @@ exports.login2 = {
       if (!user.isActive) {
         return res.redirect(`${process.env.FRONTEND_URL}/login?error=Your account is not verified or has been banned. Please verify your email or contact support.`);
       }
-      
+
       if (!user.rankId) {
         let defaultRank = await Rank.findOne({ rankName: "Bronze" });
         if (!defaultRank) {
@@ -89,8 +95,11 @@ exports.login2 = {
         await user.save();
       }
 
-      const defaultRoleId = "67ac64bbe072694cafa16e78";
-      await UserRole.create({ userId: user._id, roleId: defaultRoleId });
+
+      const existingUserRole = await UserRole.findOne({ userId: user._id });
+      if (!existingUserRole) {
+        await UserRole.create({ userId: user._id, roleId: "67ac64bbe072694cafa16e78" });
+      }
 
       const token = jwt.sign(
         {
@@ -98,7 +107,7 @@ exports.login2 = {
           rankId: user.rankId,
           image: user.profileImage,
           fullname: user.fullname,
-          roleId: [defaultRoleId],
+          roleId: ["67ac64bbe072694cafa16e78"],
         },
         process.env.JWT_SECRET,
         { expiresIn: "1d" }
@@ -159,8 +168,8 @@ exports.register = async (req, res) => {
         success: false,
         message: "Phone number must start with 0 and contain 9 to 11 digits.",
       });
-    }   
-    
+    }
+
 
     if (password.length > 50 || /\s/.test(password)) {
       return res.status(400).json({
@@ -174,8 +183,7 @@ exports.register = async (req, res) => {
       if (!isExist.isActive) {
         return res.status(403).json({
           success: false,
-          code: 1001,
-          message: "Your account is not verified or has been banned. Please verify your email or contact support.",
+          message: "Your account is banned. Cannot register.",
         });
       }
       return res.status(400).json({
@@ -204,7 +212,15 @@ exports.register = async (req, res) => {
     });
 
     const defaultRoleId = "67ac64bbe072694cafa16e78";
-    await UserRole.create({ userId: newUser._id, roleId: defaultRoleId });
+
+    const existingUserRole = await UserRole.findOne({
+      userId: newUser._id,
+      roleId: defaultRoleId
+    });
+
+    if (!existingUserRole) {
+      await UserRole.create({ userId: newUser._id, roleId: defaultRoleId });
+    }
 
     sendEmailOtp(fullname, email, otp);
 
@@ -240,6 +256,14 @@ exports.login = async (req, res) => {
       });
     }
 
+    // 🔒 Nếu user không có password (thường là social login)
+    if (!user.password) {
+      return res.status(400).json({
+        message: "This account uses Google/Facebook login. Please login using that method or reset your password.",
+        success: false,
+      });
+    }
+
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
       return res.status(401).json({
@@ -249,15 +273,9 @@ exports.login = async (req, res) => {
     }
 
     if (!user.isActive) {
-      const otp = generateRandomString();
-      user.otp = otp;
-
-      await user.save();
-      sendEmailOtp(user.fullname, user.email, otp);
-
       return res.status(403).json({
         code: 1001,
-        message: "User is not active. Please verify OTP.",
+        message: "Your account is banned. Please contact support.",
         success: false,
       });
     }
@@ -280,7 +298,7 @@ exports.login = async (req, res) => {
     const { password: _, ...userWithoutPassword } = user.toObject();
 
     // Map roleName to redirect path
-    let redirect = "/"; // default
+    let redirect = "/";
     if (roleNames.includes("admin")) {
       redirect = "/manage/dashboard";
     } else if (roleNames.includes("staff")) {
@@ -361,7 +379,7 @@ exports.verifyOtp = async (req, res) => {
     const user = await User.findOne({ email });
     const now = new Date();
     const otpAge = (now - user.updatedAt) / 1000; // đơn vị: giây
-    
+
     if (otpAge > 300) {
       return res.status(400).json({
         success: false,
@@ -369,7 +387,7 @@ exports.verifyOtp = async (req, res) => {
         message: "OTP has expired. Please request a new one.",
       });
     }
-    
+
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -378,14 +396,14 @@ exports.verifyOtp = async (req, res) => {
       });
     }
 
-    // ✅ OTP phải đúng bất kể user.active là gì
-    if (user.otp !== otp) {
-      return res.status(400).json({
+
+    if (!user || !user.isActive) {
+      return res.status(403).json({
         success: false,
-        code: 1011,
-        message: "Invalid OTP.",
+        message: "Account is banned or invalid.",
       });
     }
+    
 
     user.isActive = true;
     user.otp = undefined;
@@ -424,6 +442,7 @@ exports.forgotPassword = async (req, res) => {
         message: "Your account is banned. Cannot reset password.",
       });
     }
+    
 
     const otp = generateRandomString();
     user.otp = otp;
