@@ -56,17 +56,45 @@ exports.login2 = {
       const { password: _, ...userWithoutPassword } = user.toObject();
 
       // Log cookie options
-      const cookieOptions = {
-        httpOnly: false,
-        secure: process.env.NODE_ENV == "production",
-        sameSite: process.env.NODE_ENV == "production" ? "none" : "lax",
-        maxAge: 1 * 24 * 60 * 60 * 1000,
-      };
+
+      console.log("[GoogleCallback] Environment check:");
+      console.log("[GoogleCallback] NODE_ENV:", process.env.NODE_ENV);
+      console.log("[GoogleCallback] FRONTEND_URL:", process.env.FRONTEND_URL);
+      console.log("[GoogleCallback] Is production:", process.env.NODE_ENV === "production");
+      console.log("[GoogleCallback] Request protocol:", req.protocol);
+      console.log("[GoogleCallback] Request hostname:", req.hostname);
+      console.log("[GoogleCallback] Request headers:", req.headers);
+      
+      let cookieOptions;
+      
+      if (process.env.NODE_ENV === "production") {
+        // Thử cấu hình cho production
+        cookieOptions = {
+          httpOnly: false,
+          secure: true,
+          sameSite: 'none',
+          maxAge: 1 * 24 * 60 * 60 * 1000,
+          path: "/"
+        };
+      } else {
+        // Cấu hình cho development
+        cookieOptions = {
+          httpOnly: false,
+          secure: false,
+          sameSite: 'lax',
+          maxAge: 1 * 24 * 60 * 60 * 1000,
+          path: "/"
+        };
+      }
+      
       console.log("[GoogleCallback] Set-Cookie options:", cookieOptions);
       res.cookie("token", token, cookieOptions);
       console.log("[GoogleCallback] Đã set cookie token cho user:", user.email);
+      
+      console.log("[GoogleCallback] Response headers after setting cookie:", res.getHeaders());
+      console.log("[GoogleCallback] Redirecting to:", `${process.env.FRONTEND_URL}/login?success=Welcome back, ${user.fullname}!&token=${token}`);
 
-      res.redirect(`${process.env.FRONTEND_URL}/login?success=Welcome back, ${user.fullname}!`);
+      res.redirect(`${process.env.FRONTEND_URL}/login?success=Welcome back, ${user.fullname}!&token=${token}`);
     } catch (error) {
       console.error("[GoogleCallback] Error in Google callback:", error);
       res.redirect(`${process.env.FRONTEND_URL}/login?error=Google login failed`);
