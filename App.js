@@ -51,8 +51,8 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: false, // Thử false trước
-      sameSite: 'lax', // Thử lax thay vì none
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       maxAge: 24 * 60 * 60 * 1000
     },
   })
@@ -63,7 +63,7 @@ app.use(passport.session());
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser()); // Di chuyển lên đây, trước các routes
+app.use(cookieParser());
 
 app.use('/auth', authRouter);
 app.use("", oauth2);
@@ -90,7 +90,6 @@ app.use('/reservation', reservationRouter);
 app.use("/news", newsRouter);
 
 app.use(express.urlencoded({ extended: true }));
-// app.use(cookieParser()); // Xóa dòng này vì đã di chuyển lên trên
 
 app.listen(process.env.PORT, () => {
   connectDB();
