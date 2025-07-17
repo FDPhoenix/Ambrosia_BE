@@ -9,8 +9,6 @@ const passport = require("passport");
 exports.login2 = {
   googleCallback: async (req, res) => {
     try {
-          console.log("Google callback req.user:", req.user); // Thêm dòng này
-
       const user = req.user;
       if (!user) {
         return res.status(400).json({
@@ -33,7 +31,7 @@ exports.login2 = {
       if (!user.isActive) {
         return res.redirect(`${process.env.FRONTEND_URL}/login?error=Your account is not verified or has been banned. Please verify your email or contact support.`);
       }
-      
+
 
       const existingUserRole = await UserRole.findOne({ userId: user._id });
       if (!existingUserRole) {
@@ -54,15 +52,28 @@ exports.login2 = {
 
       const { password: _, ...userWithoutPassword } = user.toObject();
 
-      res.cookie("token", token, {
-        httpOnly: false,
-        maxAge: 1 * 24 * 60 * 60 * 1000,
-      });
-
-      res.redirect(`${process.env.FRONTEND_URL}/login?success=Welcome back, ${user.fullname}!`);
+      let cookieOptions;
+      if (process.env.NODE_ENV === "production") {
+        cookieOptions = {
+          httpOnly: false,
+          secure: true,
+          sameSite: 'none',
+          maxAge: 1 * 24 * 60 * 60 * 1000,
+          path: "/"
+        };
+      } else {
+        cookieOptions = {
+          httpOnly: false,
+          secure: false,
+          sameSite: 'lax',
+          maxAge: 1 * 24 * 60 * 60 * 1000,
+          path: "/"
+        };
+      }
+      res.cookie("token", token, cookieOptions);
+      res.redirect(`${process.env.FRONTEND_URL}/login?success=Welcome back, ${user.fullname}!&token=${token}`);
     } catch (error) {
-      console.error("Error in Google callback:", error);
-      res.redirect(`${process.env.FRONTEND_URL}/login?error=Google login failed`);
+       res.redirect(`${process.env.FRONTEND_URL}/login?error=Google login failed`);
     }
   },
 
@@ -80,7 +91,7 @@ exports.login2 = {
       if (!user.isActive) {
         return res.redirect(`${process.env.FRONTEND_URL}/login?error=Your account is not verified or has been banned. Please verify your email or contact support.`);
       }
-      
+
       if (!user.rankId) {
         let defaultRank = await Rank.findOne({ rankName: "Bronze" });
         if (!defaultRank) {
@@ -118,10 +129,9 @@ exports.login2 = {
         maxAge: 1 * 24 * 60 * 60 * 1000,
       });
 
-      res.redirect(`${process.env.FRONTEND_URL}/login?success=Welcome back, ${user.fullname}!`);
+      res.redirect(`${process.env.FRONTEND_URL}/login?success=Welcome back, ${user.fullname}!&token=${token}`);
     } catch (error) {
-      console.error("Error in Facebook callback:", error);
-      res.redirect(`${process.env.FRONTEND_URL}/login?error=Facebook login failed`);
+        res.redirect(`${process.env.FRONTEND_URL}/login?error=Facebook login failed`);
     }
   },
 
@@ -166,8 +176,8 @@ exports.register = async (req, res) => {
         success: false,
         message: "Phone number must start with 0 and contain 9 to 11 digits.",
       });
-    }   
-    
+    }
+
 
     if (password.length > 50 || /\s/.test(password)) {
       return res.status(400).json({
@@ -211,11 +221,11 @@ exports.register = async (req, res) => {
 
     const defaultRoleId = "67ac64bbe072694cafa16e78";
 
-    const existingUserRole = await UserRole.findOne({ 
-      userId: newUser._id, 
-      roleId: defaultRoleId 
+    const existingUserRole = await UserRole.findOne({
+      userId: newUser._id,
+      roleId: defaultRoleId
     });
-    
+
     if (!existingUserRole) {
       await UserRole.create({ userId: newUser._id, roleId: defaultRoleId });
     }
@@ -227,7 +237,6 @@ exports.register = async (req, res) => {
       message: "Registration successful. Please verify your email with the OTP sent.",
     });
   } catch (error) {
-    console.error("Error during registration:", error);
     res.status(500).json({
       success: false,
       message: "Internal server error. Please try again later.",
@@ -320,7 +329,6 @@ exports.login = async (req, res) => {
       });
 
   } catch (error) {
-    console.error("Error during login:", error);
     res.status(500).json({
       message: "Internal Server Error. Please try again later.",
       success: false,
@@ -336,7 +344,6 @@ exports.logout = async (req, res) => {
       message: "Logged out successfully.",
     });
   } catch (error) {
-    console.error("Error during logout:", error);
     res.status(500).json({
       success: false,
       message: "Internal server error. Please try again later.",
@@ -377,7 +384,7 @@ exports.verifyOtp = async (req, res) => {
     const user = await User.findOne({ email });
     const now = new Date();
     const otpAge = (now - user.updatedAt) / 1000; // đơn vị: giây
-    
+
     if (otpAge > 300) {
       return res.status(400).json({
         success: false,
@@ -385,7 +392,7 @@ exports.verifyOtp = async (req, res) => {
         message: "OTP has expired. Please request a new one.",
       });
     }
-    
+
     if (!user) {
       return res.status(404).json({
         success: false,

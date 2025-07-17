@@ -227,6 +227,55 @@ exports.hideFeedback = async (req, res) => {
 };
 
 
+exports.getAllFeedbackByDishIdAdmin = async (req, res) => {
+    try {
+        const { dish_id } = req.params;
+        const { rating } = req.query;
+        const filter = { dish_id };
+        if (rating) {
+            filter.rating = Number(rating);
+        }
+        const feedbacks = await Feedback.find(filter)
+            .populate('userId', 'fullname email profileImage createdAt');
+        if (!feedbacks || feedbacks.length === 0) {
+            return res.status(404).json({
+                message: "No feedback found for this dish.",
+                success: false
+            });
+        }
+
+        const statsFilter = { dish_id };
+        if (rating) {
+            statsFilter.rating = Number(rating);
+        }
+        const feedbackStats = await Feedback.aggregate([
+            { $match: statsFilter },
+            {
+                $group: {
+                    _id: null,
+                    totalFeedback: { $sum: 1 },
+                    averageRating: { $avg: "$rating" }
+                }
+            }
+        ]);
+        return res.status(200).json({
+            message: "All feedbacks retrieved successfully.",
+            success: true,
+            feedbacks,
+            totalFeedback: feedbackStats.length > 0 ? feedbackStats[0].totalFeedback : 0,
+            averageRating: feedbackStats.length > 0
+                ? Number(feedbackStats[0].averageRating.toFixed(1))
+                : 0
+        });
+    } catch (error) {
+        return res.status(500).json({
+            message: "Server error.",
+            success: false
+        });
+    }
+};
+
+
 exports.getAllDishes = async (req, res) => {
     try {
         const { categoryId } = req.query;

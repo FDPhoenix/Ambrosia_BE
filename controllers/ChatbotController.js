@@ -3,17 +3,38 @@ const uuid = require('uuid');
 const path = require('path');
 const BookingDish = require("../models/BookingDish");
 const Dish = require("../models/Dish");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const geminiModel = gemini.getGenerativeModel({ model: "gemini-1.5-flash" });
+
 
 require('dotenv').config();
 
 const projectId = 'restaurantchatbot-rw9q';
-const keyPath = path.join(__dirname, '../dialogflow-key.json');
-const sessionClient = new dialogflow.SessionsClient({ keyFilename: keyPath });
+
+let sessionClient;
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+    const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+    sessionClient = new dialogflow.SessionsClient({ credentials });
+} else {
+    const keyPath = path.join(__dirname, '../dialogflow-key.json');
+    sessionClient = new dialogflow.SessionsClient({ keyFilename: keyPath });
+}
 
 const isValidImageUrl = (url) => {
     if (!url) return false;
-    return url.match(/\.(jpeg|jpg|png|gif)$/i) && url.startsWith('http');
+    return url.match(/\.(jpeg|jpg|png|gif|webp)$/i) && url.startsWith('http');
 };
+
+async function getSmartReplyFromGemini(message) {
+  try {
+    const result = await geminiModel.generateContent(message);
+    const response = result.response;
+    return response.text();
+  } catch (err) {
+    return null;
+  }
+}
 
 exports.sendMessage = async (req, res) => {
     const { message } = req.body;
@@ -34,10 +55,23 @@ exports.sendMessage = async (req, res) => {
         const [response] = await sessionClient.detectIntent(request);
         const result = response.queryResult;
 
-        console.log("Dialogflow Response:", JSON.stringify(result, null, 2));
-
         let reply = "";
         let buttons = [];
+
+        if (result.intent.displayName === 'AskAddress') {
+            reply = "Địa chỉ nhà hàng Ambrosia: 600 Nguyễn Văn Cừ, An Bình, Bình Thủy, Cần Thơ.";
+            buttons = [
+              {
+                dishId: "",
+                title: "Xem bản đồ",
+                price: "",
+                image: "https://dummyimage.com/150",
+                link: "https://yourdomain.com/address"
+              }
+            ];
+            console.log("[LOG] Trả về button cho intent AskAddress:", buttons);
+            return res.json({ reply, buttons });
+        }
 
         if (result.intent.displayName === 'SuggestDishes') {
             const now = new Date();
@@ -54,7 +88,7 @@ exports.sendMessage = async (req, res) => {
                     dishId: dish.dishId.toString(),
                     title: dish.name,
                     price: `${dish.price.toLocaleString('en-US')} USD`,
-                    image: isValidImageUrl(dish.imageUrl) ? dish.imageUrl : 'https://via.placeholder.com/150'
+                    image: isValidImageUrl(dish.imageUrl) ? dish.imageUrl : 'https://dummyimage.com/150'
                 }));
 
                 if (bestSellers.length === 0) {
@@ -64,32 +98,42 @@ exports.sendMessage = async (req, res) => {
             } else {
                 reply = "Sorry, I couldn't retrieve the list of best-selling dishes at this time.";
             }
-        } else {
-            result.fulfillmentMessages.forEach((message) => {
-                if (message.text) {
-                    reply = message.text.text[0] || "";
-                }
-
-                if (message.payload?.fields?.richContent) {
-                    const richContent = message.payload.fields.richContent.listValue.values || [];
-                    buttons = richContent.flatMap((outerItem) =>
-                        (outerItem.listValue?.values || []).map((innerItem) => {
-                            const structFields = innerItem.structValue?.fields || {};
-                            return {
-                                dishId: structFields.dishId?.stringValue || "",
-                                title: structFields.title?.stringValue || "",
-                                price: structFields.price?.stringValue || "",
-                                image: structFields.image?.stringValue || "https://via.placeholder.com/150"
-                            };
-                        })
-                    );
-                }
-            });
+            console.log("[LOG] Trả về buttons cho SuggestDishes:", buttons);
         }
+        if (result.intent.isFallback) {
+            reply = await getSmartReplyFromGemini(message) || "Sorry, I don't understand your request.";
+            return res.json({ reply, buttons: [] });
+        }
+        result.fulfillmentMessages.forEach((message) => {
+            if (message.text) {
+                reply = message.text.text[0] || "";
+            }
 
+            if (message.payload?.fields?.richContent) {
+                const richContent = message.payload.fields.richContent.listValue.values || [];
+                buttons = richContent.flatMap((outerItem) =>
+                    (outerItem.listValue?.values || []).map((innerItem) => {
+                        const structFields = innerItem.structValue?.fields || {};
+                        return {
+                            dishId: structFields.dishId?.stringValue || "",
+                            title: structFields.title?.stringValue || "",
+                            price: structFields.price?.stringValue || "",
+                            image: structFields.image?.stringValue,
+                            link: structFields.link?.stringValue || undefined,
+                            text: structFields.text?.stringValue || ""
+                        };
+                    })
+                );
+                console.log("[LOG] Trả về buttons từ Dialogflow richContent:", buttons);
+            }
+        });
         return res.json({ reply, buttons });
     } catch (err) {
-        console.error("Dialogflow Error:", err);
+
+        const geminiReply = await getSmartReplyFromGemini(req.body.message);
+        if (geminiReply) {
+            return res.json({ reply: geminiReply, buttons: [] });
+        }
         return res.status(500).json({ reply: "Sorry, I didn't understand your request." });
     }
 };
@@ -134,8 +178,7 @@ exports.getBestSellersInternal = async ({ limit = 10, month, year }) => {
 
         return { success: true, message: filterMessage, data: bestSellers };
     } catch (error) {
-        console.error("Error fetching bestsellers:", error.message);
-        return { success: false, message: "Error fetching bestsellers!", error: error.message };
+         return { success: false, message: "Error fetching bestsellers!", error: error.message };
     }
 };
 
