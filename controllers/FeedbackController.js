@@ -6,7 +6,7 @@ const User = require('../models/User');
 const mongoose = require("mongoose");
 
 exports.createFeedback = async (req, res) => {
-    const { dish_id, rating, comment } = req.body;
+    const { dish_id, rating, comment, orderId } = req.body;
     const userId = req.user.id;
 
     try {
@@ -21,6 +21,7 @@ exports.createFeedback = async (req, res) => {
         const newFeedback = new Feedback({
             userId,
             dish_id,
+            orderId,
             rating,
             comment,
         });
@@ -291,5 +292,29 @@ exports.getAllDishes = async (req, res) => {
     } catch (error) {
         console.error("Lỗi khi lấy danh sách món ăn:", error);
         res.status(500).json({ message: "Lỗi khi lấy danh sách món ăn", error });
+    }
+};
+
+exports.checkUserFeedback = async (req, res) => {
+    try {
+        const { dish_id, orderId } = req.params;
+        const userId = req.user.id;
+
+        const existingFeedback = await Feedback.findOne({
+            userId: userId,
+            dish_id: dish_id,
+            orderId: orderId
+        });
+
+        return res.status(200).json({
+            success: true,
+            hasFeedback: !!existingFeedback,
+            feedback: existingFeedback || null
+        });
+    } catch (error) {
+        return res.status(500).json({
+            message: "Server error.",
+            success: false
+        });
     }
 };
