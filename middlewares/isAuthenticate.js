@@ -3,39 +3,39 @@ const SECRET_KEY = process.env.SECRET_KEY;
 
 exports.isAuthenticated = (req, res, next) => {
   try {
-    const authHeader = req.headers['authorization'];
+    let token = null;
+    
 
-    if (!authHeader) {
-      return res.status(401).json({
+    const authHeader = req.headers['authorization'];
+    if (authHeader) {
+      token = authHeader.split(' ')[1];
+         }
+    
+    
+    if (!token) {
+      token = req.cookies?.token;
+         }
+
+    if (!token) {
+        return res.status(401).json({
         message: "Access denied. No token provided.",
         success: false
       });
     }
 
-    const token = authHeader.split(' ')[1];
-    if (!token) {
-      return res.status(401).json({
-        message: "Access denied. No token provided.",
-        message: false
-      });
-    }
-
-
     jwt.verify(token, SECRET_KEY, (err, decoded) => {
       if (err) {
-        return res.status(401).json({
+         return res.status(401).json({
           message: "Invalid or expired token.",
           success: false
         });
       }
 
-      req.user = decoded;
+        req.user = decoded;
       next();
     });
   } catch (error) {
-    console.error("Authentication error:", error);
-
-    return res.status(500).json({
+       return res.status(500).json({
       message: "Internal server error.",
       success: false
     });
@@ -55,9 +55,7 @@ exports.isAdmin = (req, res, next) => {
 
     next();
   } catch (error) {
-    console.error("Authorization error:", error);
-
-    return res.status(500).json({
+     return res.status(500).json({
       message: "Internal server error.",
       success: false
     });

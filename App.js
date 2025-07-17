@@ -50,7 +50,11 @@ app.use(
     secret: process.env.SECRET_KEY || "your_session_secret",
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 },
+    cookie: {
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      maxAge: 24 * 60 * 60 * 1000
+    },
   })
 );
 
@@ -59,6 +63,7 @@ app.use(passport.session());
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 
 app.use('/auth', authRouter);
 app.use("", oauth2);
@@ -85,7 +90,6 @@ app.use('/reservation', reservationRouter);
 app.use("/news", newsRouter);
 
 app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
 
 app.listen(process.env.PORT, () => {
   connectDB();
