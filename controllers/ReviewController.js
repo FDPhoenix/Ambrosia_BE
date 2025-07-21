@@ -139,6 +139,8 @@ exports.replyToReview = async (req, res) => {
         }
 
         review.isReplied = true;
+        review.replyContent = replyContent;
+        review.replyDate = new Date();
         await review.save();
 
         const transporter = nodemailer.createTransport({
