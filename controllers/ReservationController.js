@@ -50,10 +50,20 @@ exports.getStaffReservation = async (req, res) => {
         const { page = 1, limit = 6 } = req.query;
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const total = await Booking.countDocuments({
-            status: { $in: ["Confirmed", "Canceled", "confirmed", "canceled"] }
+            status: {
+                $in: [
+                    "Confirmed", "Canceled", "Cooking", "Ready", "Completed",
+                    "confirmed", "canceled", "cooking", "ready", "completed"
+                ]
+            }
         });
         const bookings = await Booking.find({
-            status: { $in: ["Confirmed", "Canceled", "confirmed", "canceled"] }
+            status: {
+                $in: [
+                    "Confirmed", "Canceled", "Cooking", "Ready", "Completed",
+                    "confirmed", "canceled", "cooking", "ready", "completed"
+                ]
+            }
         })
             .skip(skip)
             .limit(parseInt(limit))
@@ -144,8 +154,8 @@ exports.getAvailableTables = async (req, res) => {
                 const bookingEnd = new Date(bookingStart.getTime() + 5 * 60 * 60 * 1000);
 
                 if (
-                    (requestedStart >= bookingStart && requestedStart < bookingEnd) || 
-                    (requestedEnd > bookingStart && requestedEnd <= bookingEnd) ||  
+                    (requestedStart >= bookingStart && requestedStart < bookingEnd) ||
+                    (requestedEnd > bookingStart && requestedEnd <= bookingEnd) ||
                     (requestedStart <= bookingStart && requestedEnd >= bookingEnd)
                 ) {
                     isAvailable = false;
