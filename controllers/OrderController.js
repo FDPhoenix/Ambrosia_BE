@@ -2,24 +2,81 @@ const Order = require("../models/Order");
 
 exports.getOrders = async (req, res) => {
     try {
-        const { userId, paymentStatus, page = 1, limit = 6 } = req.query;
+        const { userId, paymentStatus, page = 1, limit = 6, orderType, dateRange, fromDate, toDate } = req.query;
         const filter = {};
 
         if (userId) filter.userId = userId;
         if (paymentStatus) filter.paymentStatus = paymentStatus;
 
-        const skip = (parseInt(page) - 1) * parseInt(limit);
-        const totalOrders = await Order.countDocuments(filter);
+        // Chuẩn bị filter cho bookingId
+        let bookingFilter = {};
+        if (orderType) bookingFilter.orderType = orderType;
 
-        const orders = await Order.find(filter)
-            .populate("userId", "name email")
-            .populate("bookingId")
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(parseInt(limit));
+        // Xử lý filter ngày
+        if (dateRange || fromDate || toDate) {
+            bookingFilter.bookingDate = {};
+            const now = new Date();
+            let startDate, endDate;
+            if (dateRange) {
+                switch (dateRange) {
+                    case "today":
+                        startDate = new Date();
+                        startDate.setHours(0,0,0,0);
+                        endDate = new Date();
+                        endDate.setHours(23,59,59,999);
+                        break;
+                    case "yesterday":
+                        startDate = new Date();
+                        startDate.setDate(startDate.getDate() - 1);
+                        startDate.setHours(0,0,0,0);
+                        endDate = new Date(startDate);
+                        endDate.setHours(23,59,59,999);
+                        break;
+                    case "last7days":
+                        endDate = new Date();
+                        endDate.setHours(23,59,59,999);
+                        startDate = new Date();
+                        startDate.setDate(startDate.getDate() - 6);
+                        startDate.setHours(0,0,0,0);
+                        break;
+                    case "thisMonth":
+                        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+                        break;
+                    case "lastMonth":
+                        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                        endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+                        break;
+                }
+                if (startDate) bookingFilter.bookingDate.$gte = startDate;
+                if (endDate) bookingFilter.bookingDate.$lte = endDate;
+            }
+            if (fromDate) bookingFilter.bookingDate.$gte = new Date(fromDate);
+            if (toDate) bookingFilter.bookingDate.$lte = new Date(toDate);
+        }
 
+        // Lấy tất cả order phù hợp filter
+        const allOrders = await Order.find(filter)
+            .populate({
+                path: "userId",
+                select: "name email"
+            })
+            .populate({
+                path: "bookingId",
+                match: Object.keys(bookingFilter).length > 0 ? bookingFilter : undefined
+            })
+            .sort({ createdAt: -1 });
 
-        const formattedOrders = orders.map(order => ({
+        // Lọc các order mà bookingId bị null nếu có filter booking
+        let filteredOrders = allOrders;
+        if (Object.keys(bookingFilter).length > 0) {
+            filteredOrders = allOrders.filter(order => order.bookingId);
+        }
+
+        const totalOrders = filteredOrders.length;
+        const paginatedOrders = filteredOrders.slice((page - 1) * limit, page * limit);
+
+        const formattedOrders = paginatedOrders.map(order => ({
             ...order.toObject(),
             remainingAmount: order.paymentStatus === "Success"
                 ? 0
