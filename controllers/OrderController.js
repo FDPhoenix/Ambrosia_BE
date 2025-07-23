@@ -1,4 +1,6 @@
 const Order = require("../models/Order");
+const Booking = require("../models/Booking");
+const Guest = require("../models/Guest");
 
 exports.getOrders = async (req, res) => {
     try {
@@ -8,11 +10,9 @@ exports.getOrders = async (req, res) => {
         if (userId) filter.userId = userId;
         if (paymentStatus) filter.paymentStatus = paymentStatus;
 
-        // Chuẩn bị filter cho bookingId
         let bookingFilter = {};
         if (orderType) bookingFilter.orderType = orderType;
 
-        // Xử lý filter ngày
         if (dateRange || fromDate || toDate) {
             bookingFilter.bookingDate = {};
             const now = new Date();
@@ -20,24 +20,16 @@ exports.getOrders = async (req, res) => {
             if (dateRange) {
                 switch (dateRange) {
                     case "today":
-                        startDate = new Date();
-                        startDate.setHours(0,0,0,0);
-                        endDate = new Date();
-                        endDate.setHours(23,59,59,999);
+                        startDate = new Date(); startDate.setHours(0, 0, 0, 0);
+                        endDate = new Date(); endDate.setHours(23, 59, 59, 999);
                         break;
                     case "yesterday":
-                        startDate = new Date();
-                        startDate.setDate(startDate.getDate() - 1);
-                        startDate.setHours(0,0,0,0);
-                        endDate = new Date(startDate);
-                        endDate.setHours(23,59,59,999);
+                        startDate = new Date(); startDate.setDate(startDate.getDate() - 1); startDate.setHours(0, 0, 0, 0);
+                        endDate = new Date(startDate); endDate.setHours(23, 59, 59, 999);
                         break;
                     case "last7days":
-                        endDate = new Date();
-                        endDate.setHours(23,59,59,999);
-                        startDate = new Date();
-                        startDate.setDate(startDate.getDate() - 6);
-                        startDate.setHours(0,0,0,0);
+                        endDate = new Date(); endDate.setHours(23, 59, 59, 999);
+                        startDate = new Date(); startDate.setDate(startDate.getDate() - 6); startDate.setHours(0, 0, 0, 0);
                         break;
                     case "thisMonth":
                         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -55,68 +47,132 @@ exports.getOrders = async (req, res) => {
             if (toDate) bookingFilter.bookingDate.$lte = new Date(toDate);
         }
 
-        // Lấy tất cả order phù hợp filter
         const allOrders = await Order.find(filter)
-            .populate({
-                path: "userId",
-                select: "name email"
-            })
+            .populate({ path: "userId", select: "fullname email phoneNumber" })
             .populate({
                 path: "bookingId",
-                match: Object.keys(bookingFilter).length > 0 ? bookingFilter : undefined
+                match: Object.keys(bookingFilter).length > 0 ? bookingFilter : undefined,
+                populate: [
+                    { path: "tableId", select: "tableNumber capacity" },
+                    { path: "userId", select: "fullname email phoneNumber" }
+                ]
             })
             .sort({ createdAt: -1 });
 
-        // Lọc các order mà bookingId bị null nếu có filter booking
         let filteredOrders = allOrders;
         if (Object.keys(bookingFilter).length > 0) {
             filteredOrders = allOrders.filter(order => order.bookingId);
         }
 
-        const totalOrders = filteredOrders.length;
-        const paginatedOrders = filteredOrders.slice((page - 1) * limit, page * limit);
+        const bookingIds = filteredOrders
+            .map(order => order.bookingId?._id)
+            .filter(id => id);
+        const guests = await Guest.find({ bookingId: { $in: bookingIds } }).lean();
 
-        const formattedOrders = paginatedOrders.map(order => ({
-            ...order.toObject(),
-            remainingAmount: order.paymentStatus === "Success"
-                ? 0
-                : (order.totalAmount - (order.prepaidAmount || 0)),
-        }));
+        const formattedOrders = filteredOrders.map(order => {
+            const booking = order.bookingId;
+            const guest = guests.find(g => g.bookingId.toString() === booking?._id.toString());
+
+            const isDineIn = booking?.orderType === "dine-in";
+
+            return {
+                ...order.toObject(),
+                orderType: isDineIn ? "dine-in" : "delivery",
+                bookingInfo: booking ? {
+                    bookingDate: booking.bookingDate,
+                    startTime: booking.startTime,
+                    endTime: booking.endTime,
+                    table: booking.tableId?.tableNumber || null,
+                } : null,
+                customerInfo: {
+                    type: order.userId ? "User" : "Guest",
+                    name: order.userId?.fullname || guest?.name || "Unknown",
+                    email: order.userId?.email || guest?.email || "",
+                    contactPhone: order.userId?.phoneNumber || guest?.phoneNumber || booking?.contactPhone || "",
+                    deliveryAddress: isDineIn ? booking?.deliveryAddress || "" : order.deliveryAddress || "",
+                    notes: isDineIn ? booking?.notes || "" : order.notes || ""
+                },
+                remainingAmount: order.paymentStatus === "Success"
+                    ? 0
+                    : (order.totalAmount - (order.prepaidAmount || 0))
+            };
+        });
+
+        const totalOrders = formattedOrders.length;
+        const paginatedOrders = formattedOrders.slice((page - 1) * limit, page * limit);
 
         res.status(200).json({
             success: true,
-            orders: formattedOrders,
+            orders: paginatedOrders,
             totalOrders,
-            totalPages: Math.ceil(totalOrders / limit),
+            totalPages: Math.ceil(totalOrders / limit)
         });
+
     } catch (error) {
         console.error("Error fetching orders:", error);
         res.status(500).json({ success: false, message: "Internal server error" });
     }
 };
 
-
-
 exports.getOrderById = async (req, res) => {
     try {
         const { id } = req.params;
+
         const order = await Order.findById(id)
-            .populate("userId", "name email")
-            .populate("bookingId");
+            .populate({
+                path: "userId",
+                select: "fullname email phoneNumber"
+            })
+            .populate({
+                path: "bookingId",
+                populate: [
+                    { path: "tableId", select: "tableNumber capacity" },
+                    { path: "userId", select: "fullname email phoneNumber" }
+                ]
+            });
 
         if (!order) {
             return res.status(404).json({ success: false, message: "Order not found" });
         }
 
+        const booking = order.bookingId;
 
-        const remainingAmount = order.paymentStatus === "Success" ? 0 : (order.totalAmount - (order.prepaidAmount || 0));
+        let guest = null;
+        if (booking?._id) {
+            guest = await Guest.findOne({ bookingId: booking._id }).lean();
+        }
+
+        const isDineIn = booking?.orderType === "dine-in";
+
+        const customerInfo = {
+            type: order.userId ? "User" : "Guest",
+            name: order.userId?.fullname || guest?.name || "Unknown",
+            email: order.userId?.email || guest?.email || "",
+            contactPhone: order.userId?.phoneNumber || guest?.phoneNumber || booking?.contactPhone || "",
+            deliveryAddress: isDineIn ? booking?.deliveryAddress || "" : order.deliveryAddress || "",
+            notes: isDineIn ? booking?.notes || "" : order.notes || ""
+        };
+
+        const remainingAmount = order.paymentStatus === "Success"
+            ? 0
+            : (order.totalAmount - (order.prepaidAmount || 0));
+
+        const formattedOrder = {
+            ...order.toObject(),
+            orderType: isDineIn ? "dine-in" : "delivery",
+            bookingInfo: booking ? {
+                bookingDate: booking.bookingDate,
+                startTime: booking.startTime,
+                endTime: booking.endTime,
+                table: booking.tableId?.tableNumber || null
+            } : null,
+            customerInfo,
+            remainingAmount
+        };
 
         res.status(200).json({
             success: true,
-            order: {
-                ...order.toObject(),
-                remainingAmount
-            },
+            order: formattedOrder
         });
     } catch (error) {
         console.error("Error fetching order:", error);

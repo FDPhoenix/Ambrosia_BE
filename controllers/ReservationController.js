@@ -1,5 +1,6 @@
 //controllers/ReservationController
 const Booking = require("../models/Booking");
+const Order = require("../models/Order");
 const BookingDish = require("../models/BookingDish");
 const Table = require("../models/Table");
 const User = require("../models/User");
@@ -296,24 +297,43 @@ exports.updateReservationStatus = async (req, res) => {
 
         const booking = await Booking.findById(id);
         if (!booking) {
-            return res.status(404).json({ message: 'Order does not exist!' });
+            return res.status(404).json({ message: 'Booking does not exist!' });
         }
 
         if (booking.status === status) {
-            return res.status(400).json({ message: `The order is in status "${status}" rồi!` });
+            return res.status(400).json({ message: `The booking is already in status "${status}".` });
         }
 
         booking.status = status;
         await booking.save();
-        console.log(`Order ${id} status has been updated to "${status}".`);
+
+        let updatedOrder = null;
+
+        if (status && status.toLowerCase() === "completed") {
+            const order = await Order.findOne({ bookingId: booking._id });
+
+            if (order) {
+                order.paymentStatus = "Success";        
+                order.prepaidAmount = order.totalAmount;
+                await order.save();
+                updatedOrder = order;
+
+                console.log(`Order ${order._id} auto-updated to paymentStatus = "Success"`);
+            } else {
+                console.warn(`No order found for booking ${booking._id}, cannot update paymentStatus`);
+            }
+        }
+
+        console.log(`Booking ${id} status updated to "${status}".`);
 
         res.status(200).json({
-            message: `Order status has been updated to "${status}".`,
+            message: `Booking status updated to "${status}".`,
             booking,
+            order: updatedOrder || null
         });
     } catch (error) {
         console.error("Error updating booking status:", error.message);
-        res.status(500).json({ message: 'Error updating order status!', error: error.message });
+        res.status(500).json({ message: 'Error updating booking status!', error: error.message });
     }
 };
 
