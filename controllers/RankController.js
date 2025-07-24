@@ -124,16 +124,16 @@ exports.checkAndUpdateRank = async (req, res) => {
             let discountPercent;
             switch (newRank.rankName) {
                 case 'Silver':
-                    discount = 10;
+                    discountPercent = 10;
                     break;
                 case 'Gold':
-                    discount = 15;
+                    discountPercent = 15;
                     break;
                 case 'Platinum':
-                    discount = 20;
+                    discountPercent = 20;
                     break;
                 default:
-                    discount = 10;
+                    discountPercent = 10;
             }
 
             const newVoucher = new Voucher({
