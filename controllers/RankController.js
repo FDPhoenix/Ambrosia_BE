@@ -183,8 +183,28 @@ exports.createRank = async (req, res) => {
     try {
         const { rankName, minSpending, benefits } = req.body;
 
+        if (!rankName || minSpending === undefined || minSpending === null) {
+            return res.status(400).json({
+                message: "Rank name and minSpending are required",
+                success: false,
+            });
+        }
 
-        const existingRank = await Rank.findOne({ rankName });
+        if (typeof rankName !== 'string' || rankName.trim().length === 0) {
+            return res.status(400).json({
+                message: "Rank name must be a non-empty string",
+                success: false,
+            });
+        }
+
+        if (typeof minSpending !== 'number' || minSpending < 0) {
+            return res.status(400).json({
+                message: "MinSpending must be a positive number",
+                success: false,
+            });
+        }
+
+        const existingRank = await Rank.findOne({ rankName: rankName.trim() });
         if (existingRank) {
             return res.status(400).json({
                 message: "Rank name already exists",
@@ -192,13 +212,11 @@ exports.createRank = async (req, res) => {
             });
         }
 
-
         const newRank = await Rank.create({
-            rankName,
+            rankName: rankName.trim(),
             minSpending,
-            benefits,
+            benefits: benefits || "",
         });
-
 
         res.status(201).json({
             message: "Rank created successfully",
@@ -207,7 +225,11 @@ exports.createRank = async (req, res) => {
         });
     } catch (error) {
         console.error("Error creating rank:", error);
-        res.status(500).json({ message: "Error creating rank", error });
+        res.status(500).json({ 
+            message: "Error creating rank", 
+            success: false,
+            error: error.message 
+        });
     }
 };
 
@@ -217,18 +239,57 @@ exports.updateRank = async (req, res) => {
         const { id } = req.params;
         const { rankName, minSpending, benefits } = req.body;
 
-        const updatedRank = await Rank.findByIdAndUpdate(
-            id,
-            { rankName, minSpending, benefits },
-            { new: true }
-        );
-
-        if (!updatedRank) {
-            return res.status(404).json({ message: "Rank not found" });
+        if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ 
+                message: "Invalid rank ID", 
+                success: false 
+            });
         }
 
-        res.json({ message: "Rank updated successfully", rank: updatedRank });
+        const existingRank = await Rank.findById(id);
+        if (!existingRank) {
+            return res.status(404).json({ 
+                message: "Rank not found",
+                success: false 
+            });
+        }
+
+        if (rankName && rankName.trim() !== existingRank.rankName) {
+            const duplicateRank = await Rank.findOne({ 
+                rankName: rankName.trim(),
+                _id: { $ne: id }
+            });
+            
+            if (duplicateRank) {
+                return res.status(400).json({
+                    message: "Rank name already exists",
+                    success: false,
+                });
+            }
+        }
+
+        const updateData = {};
+        if (rankName !== undefined) updateData.rankName = rankName.trim();
+        if (minSpending !== undefined) updateData.minSpending = minSpending;
+        if (benefits !== undefined) updateData.benefits = benefits;
+
+        const updatedRank = await Rank.findByIdAndUpdate(
+            id,
+            updateData,
+            { new: true, runValidators: true }
+        );
+
+        res.json({ 
+            message: "Rank updated successfully", 
+            rank: updatedRank,
+            success: true 
+        });
     } catch (error) {
-        res.status(500).json({ message: "Error updating rank", error });
+        console.error("Error updating rank:", error);
+        res.status(500).json({ 
+            message: "Error updating rank", 
+            success: false,
+            error: error.message 
+        });
     }
 };
