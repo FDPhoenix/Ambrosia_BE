@@ -120,10 +120,26 @@ exports.checkAndUpdateRank = async (req, res) => {
 
             const expiresAt = new Date();
             expiresAt.setDate(expiresAt.getDate() + 30);
+
+            let discountPercent;
+            switch (newRank.rankName) {
+                case 'Silver':
+                    discountPercent = 10;
+                    break;
+                case 'Gold':
+                    discountPercent = 15;
+                    break;
+                case 'Platinum':
+                    discountPercent = 20;
+                    break;
+                default:
+                    discountPercent = 10;
+            }
+
             const newVoucher = new Voucher({
                 userId: user._id,
                 code: generateVoucherCode(),
-                discount: 10,
+                discount: discountPercent,
                 isUsed: false,
                 expiresAt,
             });
