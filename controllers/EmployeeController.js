@@ -263,12 +263,14 @@ exports.verifyBookingByStaff = async (req, res) => {
             return res.status(404).json({ message: "Invalid QR Code: Booking not found", success: false });
         }
 
-        if (booking.status !== "pending") {
-            return res.status(400).json({
-                message: `Booking already ${booking.status}`,
-                success: false
-            });
-        }
+        // const ALLOWED_STATUSES = ["pending", "confirmed", "confirmed"];
+
+        // if (!ALLOWED_STATUSES.includes(booking.status)) {
+        //     return res.status(400).json({
+        //         message: `Booking already ${booking.status}`,
+        //         success: false
+        //     });
+        // }
 
         const bookingDishes = await BookingDish.find({ bookingId })
             .populate("dishId", "name price")
