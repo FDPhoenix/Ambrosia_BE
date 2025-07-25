@@ -6,6 +6,7 @@ const BookingDish = require("../models/BookingDish");
 const User = require("../models/User");
 const Guest = require("../models/Guest");
 const mongoose = require("mongoose");
+const Order = require("../models/Order");
 
 exports.createBooking = async (req, res) => {
     try {
@@ -433,7 +434,7 @@ exports.cancelBooking = async (req, res) => {
 };
 
 /**
- * 📌 API Xác nhận hóa đơn điện tử
+ *  API Xác nhận hóa đơn điện tử
  */
 exports.confirmBooking = async (req, res) => {
     try {
@@ -481,6 +482,11 @@ exports.confirmBooking = async (req, res) => {
             totalBill
         });
 
+        // **Get order info to attach payment details**
+        const order = await Order.findOne({ bookingId: booking._id }).lean();
+        const paymentMethod = order?.paymentMethod || null;
+        const paymentStatus = order?.paymentStatus || null;
+
         let customerEmail = null;
         let customerName = null;
         let customerPhone = null;
@@ -500,7 +506,6 @@ exports.confirmBooking = async (req, res) => {
             }
         }
 
-
         if (!customerEmail) {
             console.log("No email to send invoice!");
             return res.status(400).json({ message: "No email to send invoice!" });
@@ -514,7 +519,7 @@ exports.confirmBooking = async (req, res) => {
             customerPhone,
             dishes: dishesFormatted,
             totalBill
-        });
+        }, order);
 
         res.status(200).json({
             message: "Booking confirmed successfully! Invoice email has been sent.",
@@ -522,7 +527,9 @@ exports.confirmBooking = async (req, res) => {
                 ...booking,
                 status: "pending",
                 dishes: dishesFormatted,
-                totalBill
+                totalBill,
+                paymentMethod,
+                paymentStatus
             }
         });
 
@@ -536,15 +543,18 @@ exports.confirmBooking = async (req, res) => {
 const nodemailer = require("nodemailer");
 const QRCode = require("qrcode");
 
-async function sendBookingEmail(booking) {
+async function sendBookingEmail(booking, order) {
     try {
-        const qrData = `https://your-domain.com/staff/scan/${booking._id}`; // Thay domain thật
-        const qrBuffer = await QRCode.toBuffer(qrData); // Tạo mã QR dưới dạng buffer
+        const qrData = `https://your-domain.com/staff/scan/${booking._id}`;
+        const qrBuffer = await QRCode.toBuffer(qrData);
+        const hasDishes = Array.isArray(booking.dishes) && booking.dishes.length > 0;
+
+        const paymentMethod = order?.paymentMethod || "N/A";
+        const paymentStatus = order?.paymentStatus || "N/A";
 
         let customerName = booking.customerName || "Customer";
         let customerEmail = booking.customerEmail;
         let customerPhone = booking.customerPhone || "No phone number";
-
 
         // Check if email does not exist
         if (!customerEmail) {
@@ -630,6 +640,17 @@ async function sendBookingEmail(booking) {
                         <td style="text-align: left; padding: 10px; border-bottom: 1px solid #ddd;"><b>Table number:</b></td>
                         <td style="text-align: right; padding: 10px; border-bottom: 1px solid #ddd;">${booking.tableId.tableNumber}</td>
                     </tr>
+                ${hasDishes ? `
+                        <tr>
+                        <td style="text-align: left; padding: 10px; border-bottom: 1px solid #ddd;"><b>Payment Method:</b></td>
+                        <td style="text-align: right; padding: 10px; border-bottom: 1px solid #ddd;">${paymentMethod}</td>
+                        </tr>
+                        <tr>
+                        <td style="text-align: left; padding: 10px; border-bottom: 1px solid #ddd;"><b>Payment Status:</b></td>
+                        <td style="text-align: right; padding: 10px; border-bottom: 1px solid #ddd;">${paymentStatus}</td>
+                        </tr>
+                        ` : ""}
+
                 </table>
 
                 ${notesHtml}
@@ -652,7 +673,6 @@ async function sendBookingEmail(booking) {
                 </div>
             </div>`;
 
-        // Gửi email
         const transporter = nodemailer.createTransport({
             service: "gmail",
             auth: {
