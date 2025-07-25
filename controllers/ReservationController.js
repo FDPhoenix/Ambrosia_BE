@@ -1,5 +1,6 @@
 //controllers/ReservationController
 const Booking = require("../models/Booking");
+const Order = require("../models/Order");
 const BookingDish = require("../models/BookingDish");
 const Table = require("../models/Table");
 const User = require("../models/User");
@@ -29,11 +30,18 @@ exports.getAllReservation = async (req, res) => {
 
         const guests = await Guest.find({ bookingId: { $in: bookingIds } }).lean();
 
-        const bookingsWithDetails = bookings.map(booking => ({
-            ...booking,
-            dishes: bookingDishes.filter(d => d.bookingId.toString() === booking._id.toString()),
-            guest: guests.find(g => g.bookingId.toString() === booking._id.toString()) || null,
-        }));
+        const orders = await Order.find({ bookingId: { $in: bookingIds } }).lean();
+
+        const bookingsWithDetails = bookings.map(booking => {
+            const relatedOrder = orders.find(o => o.bookingId.toString() === booking._id.toString()) || null;
+
+            return {
+                ...booking,
+                dishes: bookingDishes.filter(d => d.bookingId.toString() === booking._id.toString()),
+                guest: guests.find(g => g.bookingId.toString() === booking._id.toString()) || null,
+                order: relatedOrder,
+            };
+        });
 
         res.status(200).json({
             data: bookingsWithDetails,
@@ -50,10 +58,20 @@ exports.getStaffReservation = async (req, res) => {
         const { page = 1, limit = 6 } = req.query;
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const total = await Booking.countDocuments({
-            status: { $in: ["Confirmed", "Canceled", "confirmed", "canceled"] }
+            status: {
+                $in: [
+                    "Confirmed", "Canceled", "Cooking", "Ready", "Completed",
+                    "confirmed", "canceled", "cooking", "ready", "completed"
+                ]
+            }
         });
         const bookings = await Booking.find({
-            status: { $in: ["Confirmed", "Canceled", "confirmed", "canceled"] }
+            status: {
+                $in: [
+                    "Confirmed", "Canceled", "Cooking", "Ready", "Completed",
+                    "confirmed", "canceled", "cooking", "ready", "completed"
+                ]
+            }
         })
             .skip(skip)
             .limit(parseInt(limit))
@@ -76,11 +94,16 @@ exports.getStaffReservation = async (req, res) => {
 
         const guests = await Guest.find({ bookingId: { $in: bookingIds } }).lean();
 
+        const orders = await Order.find({ bookingId: { $in: bookingIds } }).lean();
+
         const bookingsWithDetails = bookings.map(booking => {
+            const relatedOrder = orders.find(o => o.bookingId.toString() === booking._id.toString()) || null;
+
             return {
                 ...booking,
                 dishes: bookingDishes.filter(dish => dish.bookingId.toString() === booking._id.toString()),
-                guest: guests.find(guest => guest.bookingId.toString() === booking._id.toString()) || null
+                guest: guests.find(guest => guest.bookingId.toString() === booking._id.toString()) || null,
+                order: relatedOrder
             };
         });
 
@@ -144,8 +167,8 @@ exports.getAvailableTables = async (req, res) => {
                 const bookingEnd = new Date(bookingStart.getTime() + 5 * 60 * 60 * 1000);
 
                 if (
-                    (requestedStart >= bookingStart && requestedStart < bookingEnd) || 
-                    (requestedEnd > bookingStart && requestedEnd <= bookingEnd) ||  
+                    (requestedStart >= bookingStart && requestedStart < bookingEnd) ||
+                    (requestedEnd > bookingStart && requestedEnd <= bookingEnd) ||
                     (requestedStart <= bookingStart && requestedEnd >= bookingEnd)
                 ) {
                     isAvailable = false;
@@ -267,6 +290,9 @@ exports.getReservationDetails = async (req, res) => {
             };
         }
 
+        const order = await Order.findOne({ bookingId: booking._id }).lean();
+        booking.order = order || null;
+
         let bookingDate = new Date(booking.bookingDate);
         if (isNaN(bookingDate.getTime())) {
             return res.status(400).json({ message: "Invalid booking date!" });
@@ -286,24 +312,43 @@ exports.updateReservationStatus = async (req, res) => {
 
         const booking = await Booking.findById(id);
         if (!booking) {
-            return res.status(404).json({ message: 'Order does not exist!' });
+            return res.status(404).json({ message: 'Booking does not exist!' });
         }
 
         if (booking.status === status) {
-            return res.status(400).json({ message: `The order is in status "${status}" rồi!` });
+            return res.status(400).json({ message: `The booking is already in status "${status}".` });
         }
 
         booking.status = status;
         await booking.save();
-        console.log(`Order ${id} status has been updated to "${status}".`);
+
+        let updatedOrder = null;
+
+        if (status && status.toLowerCase() === "completed") {
+            const order = await Order.findOne({ bookingId: booking._id });
+
+            if (order) {
+                order.paymentStatus = "Success";
+                order.prepaidAmount = order.totalAmount;
+                await order.save();
+                updatedOrder = order;
+
+                console.log(`Order ${order._id} auto-updated to paymentStatus = "Success"`);
+            } else {
+                console.warn(`No order found for booking ${booking._id}, cannot update paymentStatus`);
+            }
+        }
+
+        console.log(`Booking ${id} status updated to "${status}".`);
 
         res.status(200).json({
-            message: `Order status has been updated to "${status}".`,
+            message: `Booking status updated to "${status}".`,
             booking,
+            order: updatedOrder || null
         });
     } catch (error) {
         console.error("Error updating booking status:", error.message);
-        res.status(500).json({ message: 'Error updating order status!', error: error.message });
+        res.status(500).json({ message: 'Error updating booking status!', error: error.message });
     }
 };
 
@@ -367,7 +412,6 @@ exports.filterReservations = async (req, res) => {
             };
         }
 
-        // Tìm userId và bookingId từ searchText
         if (searchText) {
             const searchRegex = new RegExp(searchText, "i");
 
@@ -405,11 +449,18 @@ exports.filterReservations = async (req, res) => {
 
         const guests = await Guest.find({ bookingId: { $in: bookingIds } }).lean();
 
-        const bookingsWithDetails = bookings.map(b => ({
-            ...b,
-            dishes: bookingDishes.filter(d => d.bookingId.toString() === b._id.toString()),
-            guest: guests.find(g => g.bookingId.toString() === b._id.toString()) || null,
-        }));
+        const orders = await Order.find({ bookingId: { $in: bookingIds } }).lean();
+
+        const bookingsWithDetails = bookings.map(booking => {
+            const relatedOrder = orders.find(o => o.bookingId.toString() === booking._id.toString()) || null;
+
+            return {
+                ...booking,
+                dishes: bookingDishes.filter(d => d.bookingId.toString() === booking._id.toString()),
+                guest: guests.find(g => g.bookingId.toString() === booking._id.toString()) || null,
+                order: relatedOrder,
+            };
+        });
 
         return res.status(200).json({
             data: bookingsWithDetails,
