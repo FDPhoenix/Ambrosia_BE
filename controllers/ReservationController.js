@@ -30,11 +30,18 @@ exports.getAllReservation = async (req, res) => {
 
         const guests = await Guest.find({ bookingId: { $in: bookingIds } }).lean();
 
-        const bookingsWithDetails = bookings.map(booking => ({
-            ...booking,
-            dishes: bookingDishes.filter(d => d.bookingId.toString() === booking._id.toString()),
-            guest: guests.find(g => g.bookingId.toString() === booking._id.toString()) || null,
-        }));
+        const orders = await Order.find({ bookingId: { $in: bookingIds } }).lean();
+
+        const bookingsWithDetails = bookings.map(booking => {
+            const relatedOrder = orders.find(o => o.bookingId.toString() === booking._id.toString()) || null;
+
+            return {
+                ...booking,
+                dishes: bookingDishes.filter(d => d.bookingId.toString() === booking._id.toString()),
+                guest: guests.find(g => g.bookingId.toString() === booking._id.toString()) || null,
+                order: relatedOrder,
+            };
+        });
 
         res.status(200).json({
             data: bookingsWithDetails,
@@ -87,11 +94,16 @@ exports.getStaffReservation = async (req, res) => {
 
         const guests = await Guest.find({ bookingId: { $in: bookingIds } }).lean();
 
+        const orders = await Order.find({ bookingId: { $in: bookingIds } }).lean();
+
         const bookingsWithDetails = bookings.map(booking => {
+            const relatedOrder = orders.find(o => o.bookingId.toString() === booking._id.toString()) || null;
+
             return {
                 ...booking,
                 dishes: bookingDishes.filter(dish => dish.bookingId.toString() === booking._id.toString()),
-                guest: guests.find(guest => guest.bookingId.toString() === booking._id.toString()) || null
+                guest: guests.find(guest => guest.bookingId.toString() === booking._id.toString()) || null,
+                order: relatedOrder
             };
         });
 
@@ -278,6 +290,9 @@ exports.getReservationDetails = async (req, res) => {
             };
         }
 
+        const order = await Order.findOne({ bookingId: booking._id }).lean();
+        booking.order = order || null;
+
         let bookingDate = new Date(booking.bookingDate);
         if (isNaN(bookingDate.getTime())) {
             return res.status(400).json({ message: "Invalid booking date!" });
@@ -313,7 +328,7 @@ exports.updateReservationStatus = async (req, res) => {
             const order = await Order.findOne({ bookingId: booking._id });
 
             if (order) {
-                order.paymentStatus = "Success";        
+                order.paymentStatus = "Success";
                 order.prepaidAmount = order.totalAmount;
                 await order.save();
                 updatedOrder = order;
@@ -397,7 +412,6 @@ exports.filterReservations = async (req, res) => {
             };
         }
 
-        // Tìm userId và bookingId từ searchText
         if (searchText) {
             const searchRegex = new RegExp(searchText, "i");
 
@@ -435,11 +449,18 @@ exports.filterReservations = async (req, res) => {
 
         const guests = await Guest.find({ bookingId: { $in: bookingIds } }).lean();
 
-        const bookingsWithDetails = bookings.map(b => ({
-            ...b,
-            dishes: bookingDishes.filter(d => d.bookingId.toString() === b._id.toString()),
-            guest: guests.find(g => g.bookingId.toString() === b._id.toString()) || null,
-        }));
+        const orders = await Order.find({ bookingId: { $in: bookingIds } }).lean();
+
+        const bookingsWithDetails = bookings.map(booking => {
+            const relatedOrder = orders.find(o => o.bookingId.toString() === booking._id.toString()) || null;
+
+            return {
+                ...booking,
+                dishes: bookingDishes.filter(d => d.bookingId.toString() === booking._id.toString()),
+                guest: guests.find(g => g.bookingId.toString() === booking._id.toString()) || null,
+                order: relatedOrder,
+            };
+        });
 
         return res.status(200).json({
             data: bookingsWithDetails,

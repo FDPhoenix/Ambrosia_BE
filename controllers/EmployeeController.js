@@ -6,6 +6,7 @@ const Booking = require("../models/Booking");
 const BookingDish = require("../models/BookingDish");
 const Table = require("../models/Table");
 const Guest = require("../models/Guest"); // nếu bạn lưu như vậy
+const Order = require("../models/Order");
 
 
 exports.addStaff = async (req, res) => {
@@ -298,6 +299,13 @@ exports.verifyBookingByStaff = async (req, res) => {
             guest = await Guest.findOne({ bookingId: booking._id }).lean();
         }
 
+        const order = await Order.findOne({ bookingId: booking._id }).lean();
+        const paymentMethod = order?.paymentMethod || "N/A";
+        const paymentStatus = order?.paymentStatus || "unpaid";
+        const paidAmount = order?.amount || 0;
+        const transactionId = order?.transactionId || null;
+
+
         return res.status(200).json({
             success: true,
             booking: {
@@ -315,7 +323,14 @@ exports.verifyBookingByStaff = async (req, res) => {
                 totalBill: total,
                 orderType: booking.orderType,
                 deliveryAddress: booking.deliveryAddress || null,
-                pickupTime: booking.pickupTime || null
+                pickupTime: booking.pickupTime || null,
+                payment: {
+                    method: order?.paymentMethod || "N/A",
+                    status: order?.paymentStatus || "N/A",
+                    amount: order?.amount || 0,
+                    transactionId: order?.transactionId || null
+                }
+
             }
         });
     } catch (error) {
