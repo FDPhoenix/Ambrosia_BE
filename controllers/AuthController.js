@@ -189,16 +189,18 @@ exports.register = async (req, res) => {
     const isExist = await User.findOne({ email });
     if (isExist) {
       if (!isExist.isActive) {
-        return res.status(403).json({
+        return res.status(400).json({
           success: false,
-          message: "Your account is banned. Cannot register.",
+          message: "Account already exists but is not yet activated. Please check your email for OTP.",
         });
       }
+    
       return res.status(400).json({
         success: false,
         message: "Email is already registered.",
       });
     }
+    
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -408,10 +410,11 @@ exports.verifyOtp = async (req, res) => {
       });
     }
 
-    if (!user.isActive) {
-      return res.status(403).json({
+    // ✅ CHỈ CẦN KIỂM TRA: nếu đã xác thực rồi thì không cần nhập OTP nữa
+    if (user.isActive) {
+      return res.status(400).json({
         success: false,
-        message: "Account is banned or invalid.",
+        message: "Account is already verified.",
       });
     }
 
@@ -425,7 +428,6 @@ exports.verifyOtp = async (req, res) => {
 
     const now = new Date();
     const otpAge = (now - user.updatedAt) / 1000; 
-
     if (otpAge > 300) {
       return res.status(400).json({
         success: false,
@@ -433,7 +435,6 @@ exports.verifyOtp = async (req, res) => {
         message: "OTP has expired. Please request a new one.",
       });
     }
-
 
     if (user.otp !== otp) {
       return res.status(400).json({
@@ -443,6 +444,7 @@ exports.verifyOtp = async (req, res) => {
       });
     }
 
+    // ✅ Kích hoạt tài khoản
     user.isActive = true;
     user.otp = undefined;
     await user.save();
@@ -460,6 +462,7 @@ exports.verifyOtp = async (req, res) => {
     });
   }
 };
+
 
 
 exports.forgotPassword = async (req, res) => {
@@ -629,7 +632,13 @@ exports.resetPassword = async (req, res) => {
         message: "Password must not exceed 50 characters or contain spaces.",
       });
     }
-
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+    if (!passwordRegex.test(newPassword)) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must contain at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character.",
+      });
+    }
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({
