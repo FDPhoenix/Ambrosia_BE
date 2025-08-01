@@ -338,7 +338,7 @@ exports.printBill = async (req, res) => {
     <h2 style="text-align: center;">Ambrosia</h2>
     <div class="info-section">
         <p><span class="label">ID: </span> ${order.id}</p>
-        <p><span class="label">Customer:</span> ${order.userId.fullname}</p>
+        <p><span class="label">Customer:</span> ${order.userId ? order.userId.fullname : 'Guest Dine-in'}</p>
         ${
           showField("bookingDate")
             ? `<p><span class="label">Booking Date:</span> ${new Date(
