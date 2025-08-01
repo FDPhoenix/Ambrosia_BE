@@ -38,8 +38,6 @@ exports.getOrders = async (req, res) => {
     }
 };
 
-
-
 exports.getOrderById = async (req, res) => {
     try {
         const { id } = req.params;
@@ -66,7 +64,6 @@ exports.getOrderById = async (req, res) => {
         res.status(500).json({ success: false, message: "Internal server error" });
     }
 };
-
 
 exports.updateOrderStatus = async (req, res) => {
     try {
