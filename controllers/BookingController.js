@@ -545,7 +545,7 @@ const QRCode = require("qrcode");
 
 async function sendBookingEmail(booking, order) {
     try {
-        const qrData = `https://your-domain.com/staff/scan/${booking._id}`;
+        const qrData = `http://ambrosia-fe.vercel.app/staff/scan/${booking._id}`;
         const qrBuffer = await QRCode.toBuffer(qrData);
         const hasDishes = Array.isArray(booking.dishes) && booking.dishes.length > 0;
 
