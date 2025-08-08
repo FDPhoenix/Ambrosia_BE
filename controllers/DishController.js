@@ -5,7 +5,14 @@ const Order = require('../models/Order');
 const BookingDish = require('../models/BookingDish');
 
 exports.searchByNameAndCategory = async (req, res) => {
-    const { name, categoryId } = req.query;
+    const { name, categoryId, priceRange } = req.query;
+    let { page, limit } = req.query;
+
+    page = parseInt(page) || 1;
+    limit = parseInt(limit) || 12;
+
+    const skip = (page - 1) * limit;
+
     const filter = {};
 
     try {
@@ -17,29 +24,55 @@ exports.searchByNameAndCategory = async (req, res) => {
             filter.categoryId = categoryId;
         }
 
-        const dishes = await Dish.find(filter);
+        if (priceRange) {
+            const ranges = typeof priceRange === 'string' ? priceRange.split(',') : Array.isArray(priceRange) ? priceRange : [];
 
-        if (dishes.length == 0) {
+            const priceFilters = ranges.map((range) => {
+                if (range === "below-100000") {
+                    return { price: { $gte: 0, $lte: 99999 } };
+                } else if (range === "above-1000000") {
+                    return { price: { $gte: 1000000 } };
+                } else {
+                    const [min, max] = range.split('-').map(Number);
+                    if (!isNaN(min) && !isNaN(max)) {
+                        return { price: { $gte: min, $lte: max } };
+                    }
+                    return null;
+                }
+            }).filter(Boolean);
+
+            if (priceFilters.length > 0) {
+                filter.$or = priceFilters;
+            }
+        }
+
+        const totalDishes = await Dish.countDocuments(filter);
+        const dishes = await Dish.find(filter)
+            .skip(skip)
+            .limit(Number(limit));
+
+        if (dishes.length === 0) {
             return res.status(404).json({
-                message: 'There are no dish available',
-                success: false
-            })
+                message: "There are no dishes available",
+                success: false,
+            });
         }
 
         return res.status(200).json({
-            message: 'Finding dish successful',
+            message: "Finding dish successful",
             dishes,
-            success: true
+            currentPage: Number(page),
+            totalPages: Math.ceil(totalDishes / limit),
+            success: true,
         });
     } catch (error) {
-        console.log(error)
-
+        console.log(error);
         return res.status(500).json({
             message: "An error occurred while fetching dishes.",
             success: false,
         });
     }
-}
+};
 
 exports.listAllDish = async (req, res) => {
     try {
@@ -154,120 +187,120 @@ exports.getDishDetail = async (req, res) => {
 };
 
 exports.getSuggestedDishes = async (req, res) => {
-  try {
-    const userId = req.user.id;
+    try {
+        const userId = req.user.id;
 
-    // Find all orders for the user
-    const orders = await Order.find({ userId, paymentStatus: "Success" }).select('bookingId');
-    const bookingIds = orders.map(order => order.bookingId);
+        // Find all orders for the user
+        const orders = await Order.find({ userId, paymentStatus: "Success" }).select('bookingId');
+        const bookingIds = orders.map(order => order.bookingId);
 
-    // Find all dishes ordered by the user
-    const bookedDishes = await BookingDish.find({ bookingId: { $in: bookingIds } })
-      .populate('dishId')
-      .lean();
+        // Find all dishes ordered by the user
+        const bookedDishes = await BookingDish.find({ bookingId: { $in: bookingIds } })
+            .populate('dishId')
+            .lean();
 
-    // Get unique dish IDs and their order frequency
-    const dishFrequency = {};
-    bookedDishes.forEach(({ dishId, quantity }) => {
-      if (dishId) {
-        dishFrequency[dishId._id] = (dishFrequency[dishId._id] || 0) + quantity;
-      }
-    });
+        // Get unique dish IDs and their order frequency
+        const dishFrequency = {};
+        bookedDishes.forEach(({ dishId, quantity }) => {
+            if (dishId) {
+                dishFrequency[dishId._id] = (dishFrequency[dishId._id] || 0) + quantity;
+            }
+        });
 
-    // Get categories of ordered dishes
-    const orderedDishIds = Object.keys(dishFrequency);
-    const orderedDishes = await Dish.find({ _id: { $in: orderedDishIds } })
-      .select('categoryId')
-      .lean();
-    const categoryIds = [...new Set(orderedDishes.map(dish => dish.categoryId.toString()))];
+        // Get categories of ordered dishes
+        const orderedDishIds = Object.keys(dishFrequency);
+        const orderedDishes = await Dish.find({ _id: { $in: orderedDishIds } })
+            .select('categoryId')
+            .lean();
+        const categoryIds = [...new Set(orderedDishes.map(dish => dish.categoryId.toString()))];
 
-    // Find dishes in the same categories, excluding already ordered dishes
-    const recommendedDishes = await Dish.find({
-      categoryId: { $in: categoryIds },
-      _id: { $nin: orderedDishIds },
-      isAvailable: true,
-    })
-      .populate('categoryId', 'name')
-      .lean()
-      .limit(8); // Limit to 8 recommendations
+        // Find dishes in the same categories, excluding already ordered dishes
+        const recommendedDishes = await Dish.find({
+            categoryId: { $in: categoryIds },
+            _id: { $nin: orderedDishIds },
+            isAvailable: true,
+        })
+            .populate('categoryId', 'name')
+            .lean()
+            .limit(8); // Limit to 8 recommendations
 
-    // If no recommendations found, suggest popular dishes from other categories
-    if (recommendedDishes.length === 0) {
-      const popularDishes = await BookingDish.aggregate([
-        {
-          $group: {
-            _id: '$dishId',
-            totalOrdered: { $sum: '$quantity' },
-          },
-        },
-        { $sort: { totalOrdered: -1 } },
-        { $limit: 8 },
-        {
-          $lookup: {
-            from: 'dishes',
-            localField: '_id',
-            foreignField: '_id',
-            as: 'dish',
-          },
-        },
-        { $unwind: '$dish' },
-        {
-          $match: {
-            'dish.isAvailable': true,
-            'dish._id': { $nin: orderedDishIds.map(id => mongoose.Types.ObjectId(id)) },
-          },
-        },
-        {
-          $lookup: {
-            from: 'categories',
-            localField: 'dish.categoryId',
-            foreignField: '_id',
-            as: 'dish.category',
-          },
-        },
-        { $unwind: '$dish.category' },
-        {
-          $project: {
-            _id: '$dish._id',
-            name: '$dish.name',
-            price: '$dish.price',
-            imageUrl: '$dish.imageUrl',
-            description: '$dish.description',
-            category: '$dish.category.name',
-          },
-        },
-      ]);
+        // If no recommendations found, suggest popular dishes from other categories
+        if (recommendedDishes.length === 0) {
+            const popularDishes = await BookingDish.aggregate([
+                {
+                    $group: {
+                        _id: '$dishId',
+                        totalOrdered: { $sum: '$quantity' },
+                    },
+                },
+                { $sort: { totalOrdered: -1 } },
+                { $limit: 8 },
+                {
+                    $lookup: {
+                        from: 'dishes',
+                        localField: '_id',
+                        foreignField: '_id',
+                        as: 'dish',
+                    },
+                },
+                { $unwind: '$dish' },
+                {
+                    $match: {
+                        'dish.isAvailable': true,
+                        'dish._id': { $nin: orderedDishIds.map(id => mongoose.Types.ObjectId(id)) },
+                    },
+                },
+                {
+                    $lookup: {
+                        from: 'categories',
+                        localField: 'dish.categoryId',
+                        foreignField: '_id',
+                        as: 'dish.category',
+                    },
+                },
+                { $unwind: '$dish.category' },
+                {
+                    $project: {
+                        _id: '$dish._id',
+                        name: '$dish.name',
+                        price: '$dish.price',
+                        imageUrl: '$dish.imageUrl',
+                        description: '$dish.description',
+                        category: '$dish.category.name',
+                    },
+                },
+            ]);
 
-      return res.status(200).json({
-        success: true,
-        message: 'Recommended popular dishes',
-        data: popularDishes,
-      });
+            return res.status(200).json({
+                success: true,
+                message: 'Recommended popular dishes',
+                data: popularDishes,
+            });
+        }
+
+        // Format response
+        const formattedRecommendations = recommendedDishes.map(dish => ({
+            _id: dish._id,
+            name: dish.name,
+            price: dish.price,
+            imageUrl: dish.imageUrl,
+            description: dish.description,
+            category: dish.categoryId.name,
+        }));
+
+        res.status(200).json({
+            success: true,
+            message: 'Dish recommendations retrieved successfully',
+            data: formattedRecommendations,
+        });
+    } catch (error) {
+        console.error('Error in getDishRecommendations:', error.message);
+
+        res.status(500).json({
+            success: false,
+            message: 'Internal Server Error',
+        });
     }
-
-    // Format response
-    const formattedRecommendations = recommendedDishes.map(dish => ({
-      _id: dish._id,
-      name: dish.name,
-      price: dish.price,
-      imageUrl: dish.imageUrl,
-      description: dish.description,
-      category: dish.categoryId.name,
-    }));
-
-    res.status(200).json({
-      success: true,
-      message: 'Dish recommendations retrieved successfully',
-      data: formattedRecommendations,
-    });
-  } catch (error) {
-    console.error('Error in getDishRecommendations:', error.message);
-    
-    res.status(500).json({
-      success: false,
-      message: 'Internal Server Error',
-    });
-  }
 };
 
 exports.addDish = async (req, res) => {

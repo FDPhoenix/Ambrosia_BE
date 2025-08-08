@@ -189,16 +189,18 @@ exports.register = async (req, res) => {
     const isExist = await User.findOne({ email });
     if (isExist) {
       if (!isExist.isActive) {
-        return res.status(403).json({
+        return res.status(400).json({
           success: false,
-          message: "Your account is banned. Cannot register.",
+          message: "Account already exists but is not yet activated. Please check your email for OTP.",
         });
       }
+    
       return res.status(400).json({
         success: false,
         message: "Email is already registered.",
       });
     }
+    
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -381,18 +383,25 @@ const sendEmailOtp = async (fullname, email, otp) => {
 exports.verifyOtp = async (req, res) => {
   try {
     const { email, otp } = req.body;
-    const user = await User.findOne({ email });
-    const now = new Date();
-    const otpAge = (now - user.updatedAt) / 1000; // đơn vị: giây
-
-    if (otpAge > 300) {
+    
+    if (!email || !otp) {
       return res.status(400).json({
         success: false,
-        code: 1013,
-        message: "OTP has expired. Please request a new one.",
+        code: 1014,
+        message: "Email and OTP are required.",
       });
     }
 
+    if (!/^\d{6}$/.test(otp)) {
+      return res.status(400).json({
+        success: false,
+        code: 1017,
+        message: "OTP must be exactly 6 digits.",
+      });
+    }
+
+    const user = await User.findOne({ email });
+    
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -401,15 +410,41 @@ exports.verifyOtp = async (req, res) => {
       });
     }
 
-
-    if (!user || !user.isActive) {
-      return res.status(403).json({
+    // ✅ CHỈ CẦN KIỂM TRA: nếu đã xác thực rồi thì không cần nhập OTP nữa
+    if (user.isActive) {
+      return res.status(400).json({
         success: false,
-        message: "Account is banned or invalid.",
+        message: "Account is already verified.",
       });
     }
-    
 
+    if (!user.otp) {
+      return res.status(400).json({
+        success: false,
+        code: 1015,
+        message: "No OTP found. Please request a new one.",
+      });
+    }
+
+    const now = new Date();
+    const otpAge = (now - user.updatedAt) / 1000; 
+    if (otpAge > 300) {
+      return res.status(400).json({
+        success: false,
+        code: 1013,
+        message: "OTP has expired. Please request a new one.",
+      });
+    }
+
+    if (user.otp !== otp) {
+      return res.status(400).json({
+        success: false,
+        code: 1016,
+        message: "Invalid OTP. Please check and try again.",
+      });
+    }
+
+    // ✅ Kích hoạt tài khoản
     user.isActive = true;
     user.otp = undefined;
     await user.save();
@@ -427,6 +462,7 @@ exports.verifyOtp = async (req, res) => {
     });
   }
 };
+
 
 
 exports.forgotPassword = async (req, res) => {
@@ -472,20 +508,20 @@ const sendEmailForgotOtp = async (fullname, email, otp) => {
   const emailHtml = `
     <div style="font-family: 'Georgia', serif; background-color: #f5f2f0; max-width: 600px; margin: 20px auto; border-radius: 10px; border: 2px solid #d4af37; box-shadow: 0 8px 16px rgba(0,0,0,0.1); overflow: hidden;">
       <div style="background: linear-gradient(90deg, #d4af37, #b28c2e); color: #fff; padding: 20px; text-align: center;">
-        <h2 style="margin: 0; font-size: 24px; letter-spacing: 1px;">ACCOUNT VERIFICATION</h2>
+        <h2 style="margin: 0; font-size: 24px; letter-spacing: 1px;">PASSWORD RESET</h2>
       </div>
       <div style="padding: 20px;">
         <p style="font-size: 18px; color: #333; margin-bottom: 10px;">
           Dear <strong>${fullname}</strong>,
         </p>
         <p style="font-size: 16px; color: #555; margin-bottom: 20px;">
-          You recently requested to verify your account. Use the OTP below to proceed:
+          You recently requested to reset your password. Use the OTP below to proceed:
         </p>
         <div style="font-size: 24px; font-weight: bold; color: #d4af37; background: #faf8f3; border: 2px dashed #d4af37; padding: 15px; display: inline-block; border-radius: 5px; margin-bottom: 20px;">
           ${otp}
         </div>
         <p style="font-size: 14px; color: #777; margin-bottom: 0;">
-          If you did not request this, please ignore this email or contact support.
+          This OTP will expire in 5 minutes. If you did not request this, please ignore this email or contact support.
         </p>
       </div>
     </div>`;
@@ -493,20 +529,128 @@ const sendEmailForgotOtp = async (fullname, email, otp) => {
   await transporter.sendMail({
     from: "RESTAURANT MANAGEMENT SYSTEM <no-reply@restaurant.com>",
     to: email,
-    subject: "OTP READY!",
+    subject: "PASSWORD RESET OTP",
     html: emailHtml,
   });
+};
+
+exports.verifyForgotPasswordOtp = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    
+    if (!email || !otp) {
+      return res.status(400).json({
+        success: false,
+        code: 1014,
+        message: "Email and OTP are required.",
+      });
+    }
+
+    if (!/^\d{6}$/.test(otp)) {
+      return res.status(400).json({
+        success: false,
+        code: 1017,
+        message: "OTP must be exactly 6 digits.",
+      });
+    }
+
+    const user = await User.findOne({ email });
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        code: 1012,
+        message: "User not found.",
+      });
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: "Your account is banned. Cannot reset password.",
+      });
+    }
+
+    if (!user.otp) {
+      return res.status(400).json({
+        success: false,
+        code: 1015,
+        message: "No OTP found. Please request a new one.",
+      });
+    }
+
+    const now = new Date();
+    const otpAge = (now - user.updatedAt) / 1000; 
+
+    if (otpAge > 300) {
+      return res.status(400).json({
+        success: false,
+        code: 1013,
+        message: "OTP has expired. Please request a new one.",
+      });
+    }
+
+    if (user.otp !== otp) {
+      return res.status(400).json({
+        success: false,
+        code: 1016,
+        message: "Invalid OTP. Please check and try again.",
+      });
+    }
+
+    user.otp = undefined;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      code: 1000,
+      message: "OTP verified successfully. You can now reset your password.",
+    });
+  } catch (error) {
+    console.error("Error during forgot password OTP verification:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error. Please try again later.",
+    });
+  }
 };
 
 exports.resetPassword = async (req, res) => {
   const { email, newPassword } = req.body;
 
   try {
+    if (!email || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and new password are required.",
+      });
+    }
+
+    if (newPassword.length > 50 || /\s/.test(newPassword)) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must not exceed 50 characters or contain spaces.",
+      });
+    }
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+    if (!passwordRegex.test(newPassword)) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must contain at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character.",
+      });
+    }
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({
         success: false,
         message: "User not found.",
+      });
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: "Your account is banned. Cannot reset password.",
       });
     }
 
