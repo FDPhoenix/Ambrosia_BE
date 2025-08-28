@@ -1,4 +1,5 @@
 const Voucher = require('../models/Voucher');
+const mongoose = require('mongoose');
 
 exports.listAllVoucher = async (req, res) => {
     try {
@@ -22,7 +23,7 @@ exports.listAllVoucher = async (req, res) => {
 exports.getVoucherByCode = async (req, res) => {
     try {
         const { code } = req.params;
-        
+
         const currentDate = new Date();
 
         const voucher = await Voucher.findOne({
@@ -65,6 +66,27 @@ exports.getVoucherByCode = async (req, res) => {
         });
     }
 }
+
+exports.getVoucherByUserId = async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        const vouchers = await Voucher.find({ userId: userId }).sort({ expiresAt: -1 });
+
+        res.status(200).json({
+            success: true,
+            message: 'Get voucher success',
+            vouchers: vouchers
+        });
+    } catch (error) {
+        console.error(error.message);
+        res.status(500).json({
+            message: 'Internal Server Error',
+            success: false,
+        });
+    }
+};
+
 
 exports.addVoucher = async (req, res) => {
     try {

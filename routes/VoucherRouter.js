@@ -1,11 +1,13 @@
 const express = require('express');
-const { listAllVoucher, getVoucherByCode, addVoucher, updateVoucher, updateVoucherStatus } = require('../controllers/VoucherController');
+const { listAllVoucher, getVoucherByCode, addVoucher, updateVoucher, updateVoucherStatus, getVoucherByUserId } = require('../controllers/VoucherController');
+const { isAuthenticated } = require('../middlewares/isAuthenticate');
 const voucherRouter = express.Router();
 
 voucherRouter.use(express.json());
 
 voucherRouter.get('/', listAllVoucher);
 voucherRouter.get('/code/:code', getVoucherByCode);
+voucherRouter.get('/user', isAuthenticated, getVoucherByUserId);
 voucherRouter.post('/', addVoucher);
 voucherRouter.put('/:id', updateVoucher);
 voucherRouter.put('/status/:id', updateVoucherStatus)
