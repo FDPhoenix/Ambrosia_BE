@@ -87,7 +87,7 @@ exports.getCartItem = async (req, res) => {
 
 exports.updateQuantity = async (req, res) => {
     try {
-        const { cartItemId, action } = req.body;
+        const { cartItemId, action, quantity } = req.body;
 
         let cartItem = await CartItem.findById(cartItemId);
         if (!cartItem) return res.status(404).json({
@@ -95,18 +95,37 @@ exports.updateQuantity = async (req, res) => {
             success: false
         });
 
-        if (action === "increase") {
-            cartItem.quantity += 1;
-        } else if (action === "decrease" && cartItem.quantity > 1) {
-            cartItem.quantity -= 1;
+        if (quantity) {
+            if (quantity < 1) {
+                return res.status(400).json({
+                    message: "Quantity must be at least 1",
+                    success: false
+                });
+            }
+
+            cartItem.quantity = quantity;
+            await cartItem.save();
+            res.status(200).json({
+                message: "Quantity updated",
+                cartItem,
+                success: true
+            });
         }
 
-        await cartItem.save();
-        res.status(200).json({
-            message: "Quantity updated",
-            cartItem,
-            success: true
-        });
+        if (action) {
+            if (action === "increase") {
+                cartItem.quantity += 1;
+            } else if (action === "decrease" && cartItem.quantity > 1) {
+                cartItem.quantity -= 1;
+            }
+
+            await cartItem.save();
+            res.status(200).json({
+                message: "Quantity updated",
+                cartItem,
+                success: true
+            });
+        }
     } catch (error) {
         console.log(error);
 
