@@ -29,7 +29,8 @@ const paymentRouter = require("./routes/PaymentRouter");
 const voucherRouter = require('./routes/VoucherRouter');
 const bestsellerRouter = require("./routes/BestsellerRouter");
 const reservationRouter = require('./routes/ReservationRouter');
-const newsRouter = require('./routes/NewsRouter')
+const newsRouter = require('./routes/NewsRouter');
+const healthRouter = require('./routes/HealthRouter');
 const session = require("express-session");
 
 dotenv.config({});
@@ -88,6 +89,7 @@ app.use('/vouchers', voucherRouter);
 app.use('/dish', bestsellerRouter);
 app.use('/reservation', reservationRouter);
 app.use("/news", newsRouter);
+app.use("/api/health", healthRouter);
 
 app.use(express.urlencoded({ extended: true }));
 
