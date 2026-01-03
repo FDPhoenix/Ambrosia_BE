@@ -30,7 +30,7 @@ const voucherRouter = require('./routes/VoucherRouter');
 const bestsellerRouter = require("./routes/BestsellerRouter");
 const reservationRouter = require('./routes/ReservationRouter');
 const newsRouter = require('./routes/NewsRouter');
-const healthRouter = require("./routes/HealthRouter");
+const healthRouter = require('./routes/HealthRouter');
 const session = require("express-session");
 
 dotenv.config({});

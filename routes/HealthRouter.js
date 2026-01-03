@@ -7,3 +7,5 @@ healthRouter.get("/", (req, res) => {
     uptime: process.uptime(),
   });
 });
+
+module.exports = healthRouter;
